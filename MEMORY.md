@@ -187,6 +187,24 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   status is flushed to the client before the socket drops). The webhook raw-body route
   gets its own pinned cap when Phase 4 lands.
 
+**Reads (Phase 5; GAP-13/15/16 pinned).**
+- The Ledger service reads `PORT`, `DATABASE_URL` (an `app_ledger` connection string),
+  and `JWT_SECRET`; `GET /healthz` stays pure liveness (200 with no DB). Test-only boot
+  env `DISABLE_CONSUMER` set ⇒ `src/ledger/main.ts` serves HTTP without spawning the
+  consumer worker (GAP-13, load-bearing for the contract tests).
+- `GET /balance` → 200 `{ "balance_minor": "<decimal string>" }` — the BigInt-safe
+  string sum of the token tenant's `receivable` postings, derived per read, never
+  stored, all-time (not period-scoped). 401 missing/invalid token. No tenant parameter.
+- `GET /statement?period=YYYY-MM` (strict month 01-12, else 400; absent defaults to the
+  current UTC month) → 200
+  `{ period, lines: [{ txn_id, kind, metric, quantity, event_date, amount_minor }],
+  total_minor }`. Lines come from the transactions header joined to the `receivable`
+  leg, scoped by **booked period** (`booked_period_id`, the immutability boundary —
+  never by raw event_date, never the queue); `quantity`/`amount_minor`/`total_minor`
+  are decimal strings (`metric`/`quantity` null for adjustments); deterministic order
+  `(created_at, txn_id)`; **no volatile field** — two reads of the same period are
+  byte-identical (GAP-16).
+
 **Periods.**
 - Monthly. `period_key` is the UTC year-month of `event_date`, e.g. `2026-06`. Created
   lazily, `ON CONFLICT (tenant_id, period_key) DO NOTHING`.
