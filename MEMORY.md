@@ -5,8 +5,8 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-3 complete; Phase 3 gate run, pending engineer
-sign-off)._
+_Last updated: 2026-06-10 (Phases 0-4 complete; Phase 4 gate ready: true; Phases 5-7
+being built in order this session under the engineer's standing instruction)._
 
 ## Current status
 
@@ -25,8 +25,13 @@ engineer and folded into the pinned contract.
 compose stack proven end to end by the new `phase-gate` workflow (see the Phase 3 log
 below and the production-readiness-gate decision above).
 
-**Next:** engineer sign-off on the Phase 3 boundary (enqueue transaction boundary and
-gate verdict are surfaced in-session), then **Phase 4** (signed webhook — see PLAN.md).
+**Phase 4 (signed webhook) is built and gated:** pin commit `f41741e`, green commit
+`9fa12a4`, README recipe `ed84fc6`; 76 tests green from a clean DB; gate **ready: true**
+(0 blocking; 4 confirmed minors accepted with pins amended — see the Phase 4 log).
+
+**Next:** **Phase 5** (read APIs), then 6 and 7, gated per phase; this session runs
+Phases 4-7 in order (gate ready + clean tree is the bar to continue), with engineer
+sign-off on the whole run at the end.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -207,10 +212,18 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - Tenant = owner of the secret found by `X-Key-Id`, never the body.
 - **GAP-9 pinned (Phase 4):** `{source}` is the `X-Key-Id`, so the queue `event_id` is
   `wh:{key_id}:{delivery_id}`. An `X-Key-Id` that resolves to no secret returns **401**
-  (indistinguishable from a bad signature; the boundary does not leak key existence) and
-  enqueues nothing.
+  with a response byte-identical to a bad signature's, and enqueues nothing. Two
+  accepted minors from the Phase 4 review: (a) the unknown-key path skips the HMAC
+  compute, so the 401 is timing-distinguishable from a bad-signature 401 — a key id
+  alone forges nothing; (b) the key rides in by plain concatenation, so an
+  operator-minted `key_id` containing `:` could alias another same-tenant key's
+  deliveries — key ids are colon-free by operator constraint (seed and helpers comply;
+  the frozen schema has no CHECK).
 - **GAP-10 pinned (Phase 4):** `X-Signature` is lowercase hex; `X-Timestamp` is unix
-  seconds; freshness tolerance is **300 s** either side of server now.
+  seconds; freshness tolerance is **300 s** either side of server now. Accepted minor:
+  the freshness gate parses with JS `Number()`, so non-canonical numeric forms (hex,
+  exponent) that the signer chose to sign also pass — only a secret holder can produce
+  them.
 - **GAP-11 pinned (Phase 4):** body `{event_id, metric, quantity, event_date?, tenant?}`.
   `metric`/`quantity`/`event_date` validate exactly like `POST /events` (`event_date`
   absent defaults to now()); `tenant` is ignored (the secret owner wins); `event_id` is
@@ -505,6 +518,41 @@ GAP-8's missing-tenant case remains test-unconstrained; this phase's review-fix
 behaviors were folded into the green commit without new red tests (review ran
 pre-commit) — subsequent phases run the gate post-commit with visible review-fix
 commits per the new CLAUDE.md rule.
+
+### Phase 4 — signed webhook (2026-06-10)
+
+**What happened:** TDD: the 12 Phase 4 tests were already red on main (scaffold
+commits `36dbc3e`/`6f738d0`); re-verified red (route 404) before any production code.
+Pins first (`f41741e`): GAP-9 ({source} = X-Key-Id), GAP-10 (hex sig, unix-seconds
+timestamp, 300 s), GAP-11 (body shape, tenant ignored, delivery id 1..200 bytes), and
+the 256 KiB raw-body cap. One green commit (`9fa12a4`): `POST /webhooks/usage` on
+Ingest — raw bytes read first (the signature covers them), HMAC-SHA256 over
+`{timestamp}.{key_id}.{raw_body}` with the algorithm pinned server-side, length-checked
+`timingSafeEqual` over the lowercase-hex strings (no lenient hex decode), 300 s
+freshness either side, every auth failure an identical 401 with no side effect,
+validation only on authenticated bytes, tenant = secret owner, enqueue through the
+unchanged Phase 3 transaction. README recipe + honest counts (`ed84fc6`). 76 tests
+green from a clean DB. The `/events` handler, the frozen consumer, and migrations are
+untouched.
+
+**Gate (ready: true, 0 blocking):** clean-DB suites 76/76; compose cold boot +
+README-recipe smoke proven live (valid delivery → 202 → balanced pair for tenant_alpha,
+net zero; identical replay → 202 with still one row/one txn; corrupted sig /
+stale-but-correctly-signed timestamp / unknown key → byte-identical 401s, nothing
+enqueued). 3-lens review + skeptic: one finding REFUTED (pre-auth 256 KiB buffering as
+a flaw — the read must precede verification because the signature covers the raw bytes;
+bounded by the same cap as `/events`), four confirmed minors, none a forgery vector.
+
+**Solved:** the minors were accepted, not code-churned — the two pins the review proved
+overclaimed/loose were amended instead (GAP-9: "does not leak key existence" softened to
+byte-identical response, colon-free key_id operator constraint documented; GAP-10:
+`Number()` timestamp leniency recorded). Rationale: fix-the-pin beats churning reviewed
+code for non-exploitable minors; all three need the real secret or operator action to
+reach.
+
+**Accepted (logged, not hidden):** the three minors above; an unauthenticated
+oversized request reaches 413 (not 401) and can buffer up to 256 KiB, inherent to
+verify-raw-bytes-first; MEMORY status header lag closed at this gate.
 
 ## Open / pick up next time
 
