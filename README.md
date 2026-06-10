@@ -30,9 +30,12 @@ npm test
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the vitest suite. The suite grows with each phase:
-infra checks now; schema/grant invariants (Phase 1) and crash-injection (real
-SIGKILL) plus concurrency tests (Phase 2) land with those phases.
+migrations + seed, and runs the vitest suite: infra checks, schema/grant
+invariants (append-only, dedup boundary, tenant binding), and the consumer's
+crash-injection tests — a real child-process worker SIGKILLed at four
+in-transaction boundaries — plus redelivery, poison/dead-letter, closed-period
+reroute, and two-worker concurrency tests. The suite grows with each phase
+(APIs, webhook, close, reconcile still to come).
 
 Requires Docker and Node >= 24.
 

@@ -33,11 +33,16 @@ export async function processOne(pool: pg.Pool): Promise<ProcessResult> {
   const client = await pool.connect()
   let queueId: string | undefined
   try {
-    await client.query('BEGIN') // READ COMMITTED (default); the reroute loop depends on it
+    // Pinned explicitly: the reroute loop's block-reread pattern depends on
+    // READ COMMITTED, so don't inherit a changeable server default.
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED')
 
     // 1. Claim. The row lock is the lease: it cannot outlive the process.
+    // event_date also rides along as text so the header insert is exact
+    // (a JS Date round-trip would truncate microseconds).
     const claimed = await client.query(
-      `SELECT queue_id, tenant_id, event_id, kind, payload, event_date
+      `SELECT queue_id, tenant_id, event_id, kind, payload, event_date,
+              event_date::text AS event_date_text
          FROM event_queue WHERE status = 'pending'
         ORDER BY queue_id FOR UPDATE SKIP LOCKED LIMIT 1`
     )
@@ -49,8 +54,11 @@ export async function processOne(pool: pg.Pool): Promise<ProcessResult> {
     queueId = row.queue_id
     crashIfRequested('after-claim')
 
-    // 2. Resolve the booked period under a lock that a concurrent close
-    // cannot cross (close takes FOR UPDATE; we hold FOR SHARE).
+    // 2. Queue payloads are data, not trust: re-validate the date window
+    // before it can mint a billing period, then resolve the booked period
+    // under a lock that a concurrent close cannot cross (close takes
+    // FOR UPDATE; we hold FOR SHARE).
+    validateEventDate(row.event_date)
     const periodId = await resolveOpenPeriod(client, row.tenant_id, row.event_date)
 
     // 3. The money dedup boundary (INV-2), before the postings so a
@@ -68,7 +76,7 @@ export async function processOne(pool: pg.Pool): Promise<ProcessResult> {
         row.kind,
         row.payload?.metric ?? null,
         row.payload?.quantity ?? null,
-        row.event_date
+        row.event_date_text
       ]
     )
 
@@ -147,11 +155,29 @@ async function resolveOpenPeriod(
   }
 }
 
+// Pinned validation window: event_date in (now - 1y, now + 1d). Outside it,
+// the event is poison (dead after MAX_ATTEMPTS), never a misbooked charge in
+// an arbitrary period.
+function validateEventDate(eventDate: Date): void {
+  const t = eventDate.getTime()
+  const now = Date.now()
+  const yearMs = 365 * 24 * 60 * 60 * 1000
+  const dayMs = 24 * 60 * 60 * 1000
+  if (!Number.isFinite(t) || t <= now - yearMs || t >= now + dayMs) {
+    throw new Error(`event_date outside (now-1y, now+1d): ${eventDate.toISOString()}`)
+  }
+}
+
 function computeAmount(kind: string, payload: unknown): bigint {
   const p = (payload ?? {}) as Record<string, unknown>
   if (kind === 'adjustment') {
     const amount = p.amount_minor
-    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount === 0) {
+    if (
+      typeof amount !== 'number' ||
+      !Number.isSafeInteger(amount) ||
+      amount === 0 ||
+      Math.abs(amount) > MAX_QUANTITY
+    ) {
       throw new Error(`invalid adjustment amount_minor: ${String(amount)}`)
     }
     return BigInt(amount)
