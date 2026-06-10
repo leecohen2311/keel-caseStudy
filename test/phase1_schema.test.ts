@@ -235,15 +235,22 @@ describe('phase 1: schema and grant invariants', () => {
   })
 
   test('app_ledger can take the row locks the consumer depends on', async () => {
+    // Both locks need an UPDATE privilege in Postgres, so these only work
+    // because of the column-limited UPDATE grants — load-bearing, not vacuous.
     const periodId = await createPeriod()
     const client = await ledger.connect()
     try {
       await client.query('BEGIN')
-      const r = await client.query(
+      const period = await client.query(
         'SELECT period_id FROM billing_periods WHERE period_id = $1 FOR SHARE',
         [periodId]
       )
-      expect(r.rowCount).toBe(1)
+      expect(period.rowCount).toBe(1)
+      // The consumer's claim lease on the queue.
+      await client.query(
+        `SELECT queue_id FROM event_queue WHERE status = 'pending'
+         ORDER BY queue_id FOR UPDATE SKIP LOCKED LIMIT 1`
+      )
       await client.query('COMMIT')
     } finally {
       client.release()

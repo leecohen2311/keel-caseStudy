@@ -25,7 +25,7 @@ CREATE INDEX event_queue_pending_idx ON event_queue (queue_id) WHERE status = 'p
 CREATE TABLE billing_periods (
   period_id  BIGSERIAL PRIMARY KEY,
   tenant_id  TEXT NOT NULL REFERENCES tenants(tenant_id),
-  period_key TEXT NOT NULL CHECK (period_key ~ '^[0-9]{4}-[0-9]{2}$'),
+  period_key TEXT NOT NULL CHECK (period_key ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
   -- status is a cache; the authoritative closed-check is a period_closures row.
   status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
