@@ -30,9 +30,12 @@ describe('phase 0: scaffold and infra', () => {
       const before = await owner.query(
         'SELECT count(*)::int AS n FROM schema_migrations'
       )
-      await execFileP('node', ['scripts/migrate.ts'], {
+      const { stdout } = await execFileP('node', ['scripts/migrate.ts'], {
         env: { ...process.env, DATABASE_URL: connStr('owner') }
       })
+      // Not just "didn't crash": it must have seen the migrations and
+      // skipped every one of them.
+      expect(stdout).toContain('migrations ok (0 newly applied)')
       const after = await owner.query(
         'SELECT count(*)::int AS n FROM schema_migrations'
       )

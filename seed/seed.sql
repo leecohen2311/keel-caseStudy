@@ -8,3 +8,5 @@ ON CONFLICT (tenant_id) DO NOTHING;
 INSERT INTO webhook_secrets (key_id, tenant_id, secret) VALUES
   ('whk_alpha_meterco', 'tenant_alpha', 'whsec_dev_alpha_meterco_1')
 ON CONFLICT (key_id) DO NOTHING;
+-- Admin credential (pre-minted JWT) is deferred to Phase 3 where auth lands;
+-- logged as a deliberate deferral in MEMORY.md.

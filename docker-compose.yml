@@ -7,8 +7,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
     healthcheck:
       # -h 127.0.0.1 forces TCP: the entrypoint's temporary init server only
       # listens on the unix socket, so this stays red until init completes.

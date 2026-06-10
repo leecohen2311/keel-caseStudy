@@ -1,5 +1,8 @@
 # Throwaway Postgres for the test suite. Same image and role init as the real
 # compose file; data on tmpfs so every `npm test` starts clean.
+# Explicit project name so `down -v --remove-orphans` can never touch the dev
+# stack, which shares the default directory-derived project name.
+name: billing-test
 services:
   postgres-test:
     image: postgres:17-alpine

@@ -12,15 +12,15 @@ export async function runMigrations(databaseUrl: string): Promise<string[]> {
   await client.connect()
   const applied: string[] = []
   try {
+    // One migrator at a time, taken before any DDL: concurrent
+    // CREATE TABLE IF NOT EXISTS is not race-safe in Postgres.
+    await client.query('SELECT pg_advisory_lock(727001)')
     await client.query(
       `CREATE TABLE IF NOT EXISTS schema_migrations (
          filename   TEXT PRIMARY KEY,
          applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
        )`
     )
-    // One migrator at a time; harmless for the single migrate container,
-    // protects local test runs racing it.
-    await client.query('SELECT pg_advisory_lock(727001)')
 
     const done = new Set(
       (await client.query('SELECT filename FROM schema_migrations')).rows.map(
@@ -33,6 +33,8 @@ export async function runMigrations(databaseUrl: string): Promise<string[]> {
 
     for (const file of files) {
       if (done.has(file)) continue
+      // Contract: migration files must not contain their own COMMIT or
+      // CREATE INDEX CONCURRENTLY — either would break per-file atomicity.
       const sql = readFileSync(join(root, 'migrations', file), 'utf8')
       await client.query('BEGIN')
       try {

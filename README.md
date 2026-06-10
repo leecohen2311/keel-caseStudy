@@ -19,6 +19,9 @@ That single command starts Postgres, applies migrations and seed (one-shot
 - Ingest: http://localhost:3001 (`GET /healthz`)
 - Ledger: http://localhost:3002 (`GET /healthz`)
 
+If a first boot was ever interrupted mid-initialization, reset with
+`docker compose down -v` and rerun.
+
 ## Run the tests
 
 ```bash
@@ -27,8 +30,9 @@ npm test
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the vitest suite — including the invariant,
-crash-injection (real SIGKILL), and concurrency tests.
+migrations + seed, and runs the vitest suite. The suite grows with each phase:
+infra checks now; schema/grant invariants (Phase 1) and crash-injection (real
+SIGKILL) plus concurrency tests (Phase 2) land with those phases.
 
 Requires Docker and Node >= 24.
 

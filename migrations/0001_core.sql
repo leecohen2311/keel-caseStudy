@@ -6,10 +6,11 @@ CREATE TABLE tenants (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- No per-row algorithm column: the HMAC algorithm is pinned server-side
+-- (pinned contract), never data-driven.
 CREATE TABLE webhook_secrets (
   key_id     TEXT PRIMARY KEY,
   tenant_id  TEXT NOT NULL REFERENCES tenants(tenant_id),
   secret     TEXT NOT NULL,
-  algo       TEXT NOT NULL DEFAULT 'hmac-sha256',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
