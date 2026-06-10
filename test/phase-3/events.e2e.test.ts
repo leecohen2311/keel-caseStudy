@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import { makePool, newTenant, sweepPending, counts, receivable } from '../helpers/db.ts'
+import { makePool, newTenant, sweepPending, counts, receivable, queueRows } from '../helpers/db.ts'
 import { tenantToken } from '../helpers/jwt.ts'
 import { startIngest, type Service } from '../helpers/ingest-server.ts'
 import { startWorker, stopWorker, until } from '../helpers/worker.ts'
@@ -31,6 +31,14 @@ afterAll(async () => {
 async function doneCount(tenantId: string): Promise<number> {
   const r = await owner.query(
     `SELECT count(*)::int AS n FROM event_queue WHERE tenant_id = $1 AND status = 'done'`,
+    [tenantId]
+  )
+  return r.rows[0].n
+}
+
+async function pendingCount(tenantId: string): Promise<number> {
+  const r = await owner.query(
+    `SELECT count(*)::int AS n FROM event_queue WHERE tenant_id = $1 AND status = 'pending'`,
     [tenantId]
   )
   return r.rows[0].n
@@ -77,15 +85,18 @@ describe('phase 3 e2e: submitted usage becomes a balanced charge', () => {
 
     const worker = startWorker()
     try {
-      await until(async () => (await doneCount(t)) >= 1, 'event drained to done')
-      // Give a second tick in case the dedup left more than one queue row to settle.
-      await new Promise((r) => setTimeout(r, 300))
+      // Drain whatever the tenant has — one row if dedup works, three if it
+      // doesn't — then assert. No fixed sleep.
+      await until(async () => (await pendingCount(t)) === 0, 'all queued events drained')
     } finally {
       await stopWorker(worker)
     }
 
-    // Ingest dedups the retry to a single queue row; the ledger's
-    // UNIQUE(tenant_id, originating_event_id) is the backstop. Either way: one charge.
+    // Primary proof: ingest deduped the three retries to a SINGLE queue row
+    // (request idempotency, INV-2). The ledger UNIQUE(tenant_id,
+    // originating_event_id) is only the backstop; asserting one row catches a
+    // broken ingest dedup that the posting-count check alone would mask.
+    expect(await queueRows(owner, t)).toHaveLength(1)
     expect(await counts(owner, t)).toEqual({ txns: 1, postings: 2 })
     expect(await receivable(owner, t)).toBe(7n)
   })

@@ -44,6 +44,14 @@ describe('phase 3 e2e: crash before the enqueue commit (GAP-6)', () => {
     try {
       // The process dies mid-request, so the connection resets — fetch may throw.
       await postJson(`${doomed.baseUrl}/events`, body, { token }).catch(() => undefined)
+      // Load-bearing: the kill must be a real self-SIGKILL at the crash point.
+      // This keeps the test red until INGEST_CRASH_POINT genuinely fires, rather
+      // than passing vacuously while the route is still missing.
+      const death = await Promise.race([
+        doomed.exited,
+        new Promise<{ signal: string | null }>((r) => setTimeout(() => r({ signal: null }), 8000))
+      ])
+      expect(death.signal).toBe('SIGKILL')
     } finally {
       await doomed.stop().catch(() => undefined)
     }

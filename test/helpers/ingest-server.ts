@@ -11,6 +11,10 @@ import { TEST_JWT_SECRET } from './jwt.ts'
 export interface Service {
   baseUrl: string
   stop: () => Promise<void>
+  // Resolves when the child exits. The crash test awaits this to assert a real
+  // self-SIGKILL fired, so the test is load-bearing rather than passing only
+  // because the route is still missing.
+  exited: Promise<{ code: number | null; signal: string | null }>
 }
 
 function waitExit(child: ChildProcess): Promise<void> {
@@ -47,9 +51,17 @@ export async function startIngest(opts: { port?: number; extraEnv?: Record<strin
     stdio: ['ignore', 'ignore', 'inherit']
   })
   const baseUrl = `http://127.0.0.1:${port}`
+  const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve({ code: child.exitCode, signal: child.signalCode })
+    } else {
+      child.once('exit', (code, signal) => resolve({ code, signal }))
+    }
+  })
   await waitHealthy(baseUrl)
   return {
     baseUrl,
+    exited,
     stop: async () => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
       await waitExit(child)

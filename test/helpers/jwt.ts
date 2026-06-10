@@ -2,9 +2,11 @@
 // library: the adversarial tests need to forge tokens a well-behaved library
 // refuses to produce (alg:none, an exp in the past, a signature under the wrong
 // secret). The server is expected to verify HS256 with the JWT_SECRET env var,
-// reject alg:none / algorithm confusion, and enforce exp (ARCHITECTURE.md §6,
-// MEMORY.md). See CONTRACT-GAPS.md GAP-1: the secret env var name and full
-// claim shape are assumed here and must be pinned.
+// reject alg:none, and enforce exp (ARCHITECTURE.md §6, MEMORY.md). HS256 is
+// pinned server-side, so the header-named alg is ignored and the classic RS/HS
+// "algorithm confusion" attack does not apply here (a single shared HMAC secret,
+// no asymmetric key). See CONTRACT-GAPS.md GAP-1: the secret env var name and
+// full claim shape are assumed here and must be pinned.
 import { createHmac } from 'node:crypto'
 
 // The secret the spawned ingest/ledger servers are started with (helpers spawn

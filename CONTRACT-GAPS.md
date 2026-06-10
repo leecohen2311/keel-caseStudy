@@ -32,6 +32,12 @@ other claim is required.
 **Pin before implementing:** confirm the env var name and that no additional claim
 (`iss`/`aud`/`sub`) is required, or tests must add it.
 
+**Algorithm confusion (scope note):** tests exercise `alg:none`, expired, wrong-secret,
+and missing tokens. The classic RS/HS confusion attack (signing with the RSA public key
+as the HMAC secret) does not apply to this design — the server holds a single shared HMAC
+secret and no asymmetric key exists — so it is intentionally not tested. Pinning HS256
+server-side and ignoring the header-named `alg` covers it by construction.
+
 ## GAP-2 — Ingest service boot/run contract (API-1) — Phase 3
 
 Tests spawn the real service: `node src/ingest/main.ts` with env. `DATABASE_URL` and
@@ -102,3 +108,12 @@ Phase 6/7 admin-route tests.
 
 **Pin before implementing Phase 6:** the admin claim/credential shape, and seed the admin
 credential.
+
+## GAP-8 — body.tenant absent (API-1, INV-4) — Phase 3
+
+Tests cover `body.tenant` **mismatch** (claims B while authenticated as A → 403). The case
+where `body.tenant` is **absent** is underspecified: does a missing `tenant` field return
+400 (missing required field) or fall back to the token's tenant? The tests assert neither,
+to avoid inventing the contract.
+
+**Pin before implementing:** missing `body.tenant` → 400, or default to the token tenant.

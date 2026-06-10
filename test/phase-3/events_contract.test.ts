@@ -85,6 +85,12 @@ describe('phase 3: POST /events tenant isolation (INV-4)', () => {
 })
 
 describe('phase 3: POST /events validation (API-1, INV-6)', () => {
+  // event_date bounds are now-relative and recomputed each run so the
+  // out-of-window cases never drift across the boundary as the clock advances
+  // (the window is the open interval (now-1y, now+1d); see CONTRACT-GAPS GAP-5).
+  const DAY = 24 * 60 * 60_000
+  const farPast = new Date(Date.now() - 730 * DAY).toISOString() // ~2 years before now-1y
+  const farFuture = new Date(Date.now() + 3 * DAY).toISOString() // ~2 days past the +1d bound
   const cases: Array<[string, Record<string, unknown>]> = [
     ['missing metric', { metric: undefined }],
     ['missing quantity', { quantity: undefined }],
@@ -94,8 +100,8 @@ describe('phase 3: POST /events validation (API-1, INV-6)', () => {
     ['zero quantity (below the 1 floor)', { quantity: 0 }],
     ['quantity above 10^12', { quantity: 10 ** 12 + 1 }],
     ['unknown metric not in the price book', { metric: 'not_a_metric' }],
-    ['event_date well before now-1y', { event_date: '2024-01-01T00:00:00Z' }],
-    ['event_date well after now+1d', { event_date: '2026-06-12T00:00:00Z' }]
+    ['event_date well before now-1y', { event_date: farPast }],
+    ['event_date well after now+1d', { event_date: farFuture }]
   ]
 
   test.each(cases)('%s -> 400, nothing enqueued', async (_label, override) => {
@@ -152,7 +158,7 @@ describe('phase 3: POST /events happy path and durability (API-1, INV-2)', () =>
     expect(res.status).toBe(202)
     const [row] = await queueRows(owner, t)
     const skew = Math.abs(Date.now() - new Date(row.event_date).getTime())
-    expect(skew).toBeLessThan(5 * 60_000)
+    expect(skew).toBeLessThan(30_000)
   })
 
   test('a valid in-range event_date is stored on the queue row', async () => {
@@ -164,6 +170,34 @@ describe('phase 3: POST /events happy path and durability (API-1, INV-2)', () =>
     expect(res.status).toBe(202)
     const [row] = await queueRows(owner, t)
     expect(new Date(row.event_date).getTime()).toBe(new Date(when).getTime())
+  })
+
+  test('a valid storage_gb_hour event -> 202 with that metric on the row', async () => {
+    // The second pinned price-book metric: an impl that whitelists only api_call
+    // would wrongly reject this. (price book: api_call=1, storage_gb_hour=5)
+    const t = await newTenant(owner)
+    const res = await postJson(url, validBody(t, { metric: 'storage_gb_hour', quantity: 4 }), {
+      token: tenantToken(t)
+    })
+    expect(res.status).toBe(202)
+    const [row] = await queueRows(owner, t)
+    expect(row.payload.metric).toBe('storage_gb_hour')
+    expect(Number(row.payload.quantity)).toBe(4)
+  })
+
+  test('quantity at the lower bound (1) is accepted -> 202', async () => {
+    const t = await newTenant(owner)
+    const res = await postJson(url, validBody(t, { quantity: 1 }), { token: tenantToken(t) })
+    expect(res.status).toBe(202)
+    expect(await queueRows(owner, t)).toHaveLength(1)
+  })
+
+  test('quantity at the upper bound (10^12) is accepted -> 202', async () => {
+    const t = await newTenant(owner)
+    const res = await postJson(url, validBody(t, { quantity: 10 ** 12 }), { token: tenantToken(t) })
+    expect(res.status).toBe(202)
+    const [row] = await queueRows(owner, t)
+    expect(Number(row.payload.quantity)).toBe(10 ** 12)
   })
 })
 
