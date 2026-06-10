@@ -113,6 +113,19 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - `POST /periods/close` body `{tenant, period}`, admin only, concurrent-safe.
 - `POST /reconcile`, admin only.
 
+**Auth (JWT), pinned from CONTRACT-GAPS GAP-1 and GAP-7.**
+- HS256, secret in env `JWT_SECRET`, no default/fallback. Algorithm pinned server-side;
+  never read `alg` from the token header; reject `alg:none` and algorithm confusion.
+- Tenant token claims `{ tenant_id, iat, exp }`; `exp` enforced; no `iss`/`aud`/`sub`
+  required. Tenant scope is the verified `tenant_id` claim, never a request field.
+- The Ingest service reads `PORT`, `DATABASE_URL` (an `app_ingest` connection string),
+  and `JWT_SECRET`; `GET /healthz` returns 200 once listening.
+- Admin is an `admin: true` claim in the same HS256 token, same `JWT_SECRET`, with **no**
+  `tenant_id` (admin is cross-tenant and takes its target tenant from the request body,
+  the one allowed exception to scope-from-claim). A valid tenant token is rejected on
+  admin routes. Seed a pre-minted admin JWT in `seed/seed.sql` and document it in the
+  README (still deferred there as of Phase 2; close it when auth lands in Phase 3).
+
 **Money and validation.**
 - Integer minor units, `BIGINT`. No float column anywhere. In Node, amounts are strings
   / BigInt end-to-end (pg returns int8 as a string; `Number()` loses precision past
@@ -121,6 +134,13 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   book. `event_date` absent defaults to `now()`; if present it must parse and fall in
   `(now - 1y, now + 1d)`, else 400. Re-validate in the consumer (queue payloads are
   data, not trust). Body size limit on the raw-body webhook route.
+- **Request ordering (GAP-4):** authenticate -> authorize (`body.tenant` must equal the
+  token tenant, else 403) -> validate -> only then enqueue. A rejected request
+  (400/401/403/409) writes **no** `event_queue` row.
+- **Payload numeric types:** the queue payload stores `quantity` and `amount_minor` as
+  JSON **numbers** in safe-integer range, never strings, so the consumer's
+  `computeAmount` accepts them (the DB columns are `BIGINT`; the in-transit JSON doubles
+  are exact because bounded below 2^53).
 
 **Periods.**
 - Monthly. `period_key` is the UTC year-month of `event_date`, e.g. `2026-06`. Created
@@ -193,7 +213,9 @@ events).
 seed as `app_owner`; services depend on it (avoids the two-service migration race).
 README.md documents the single run command, seeded credentials (pre-minted JWTs: 2-3
 tenants plus 1 admin, no signup), sample curls, the webhook signing recipe, and how to
-run tests. Test infra uses a throwaway Postgres compose service (not testcontainers).
+run tests. Test infra uses a throwaway Postgres compose service (not testcontainers). The
+Ingest service carries a test-only `INGEST_CRASH_POINT` env hook mirroring the consumer's
+`CRASH_POINT` (e.g. `before-enqueue-commit`), for the crash-before-commit test (GAP-6).
 
 ## Reconciliation design (REC-1..3)
 
