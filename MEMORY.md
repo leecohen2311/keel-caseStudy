@@ -224,6 +224,43 @@ default CONNECT to postgres/template1 (no persistent CREATE anywhere, claim
 holds); admin credential / pre-minted JWTs deferred from the Phase 0 seed to
 Phase 3 where auth lands.
 
+### Phase 1 — schema and invariant foundations (2026-06-10)
+
+**What happened:** TDD: 14 failing schema/grant tests committed first, then
+migrations 0002 (hardened financial schema) and 0003 (two-role grants). All
+pinned constraints landed: dedup boundary `UNIQUE(tenant_id,
+originating_event_id)`, `UNIQUE(txn_id, account)` + account/amount CHECKs,
+composite FKs for tenant binding, `UNIQUE(tenant_id, period_id)` on closures,
+queue request-idempotency. 18 tests green.
+
+**Two deviations from the pinned grant list (both deliberate, in 0003
+comments):** (1) app_ledger gets INSERT on billing_periods — the pinned list
+omitted it but the consumer's get-or-create reroute loop cannot work without
+it; (2) app_ledger's event_queue UPDATE is column-limited to
+(status, attempts, processed_at) — stricter than pinned, makes the reconcile
+source of truth (payload, event_id, payload_hash, event_date) immutable to
+the runtime roles.
+
+**Review found (adversarial pass with live-DB attack battery, verdict PASS):**
+all forge paths blocked empirically (cross-tenant FK violations, header
+immutability, setval/TRUNCATE denied, app_ingest fully boxed). Key subtlety
+verified: Postgres row locks (FOR SHARE/FOR UPDATE) require an UPDATE
+privilege, so the column-limited UPDATE(status) grant on billing_periods is
+load-bearing for the consumer's lock — do not "tighten" it away. NITs: month
+regex accepted 2026-13; lock test didn't cover the queue claim lease.
+
+**Solved:** valid-month CHECK regex; lock test now also takes
+FOR UPDATE SKIP LOCKED on event_queue.
+
+**Carried forward loudly (the one soft edge, by design):** zero-sum,
+exactly-two-postings, and no-orphan-header are NOT schema-enforceable against
+app_ledger — a compromised ledger role can write an unbalanced or single-leg
+posting. INV-1's proof lives in the Phase 2 consumer's single-statement pair
+construction + the standing zero-sum query test, and in Phase 7 reconcile.
+Those tests are mandatory, not optional. Also intentional: usage headers
+allow NULL metric/quantity (nullable for adjustments); reconcile re-rates
+from the queue, never trusts the header.
+
 ## Open / pick up next time
 
 JWT claim shape and `JWT_SECRET` handling finalized before Phase 3 (auth hardening,
