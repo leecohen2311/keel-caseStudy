@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import pg from 'pg'
 import { verifyJwt, tenantOf } from '../auth.ts'
 import { PRICE_BOOK } from '../ledger/pricebook.ts'
@@ -249,6 +249,153 @@ async function handleEvents(req: IncomingMessage, res: ServerResponse): Promise<
   sendJson(res, 202, { accepted: true, event_id: eventId })
 }
 
+// Webhook freshness window, pinned (GAP-10): unix-seconds timestamp within
+// 300s either side of server now. The timestamp is bound into the
+// string-to-sign, so a captured delivery cannot be re-stamped fresh.
+const WEBHOOK_FRESHNESS_SECONDS = 300
+
+function headerString(value: string | string[] | undefined): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+async function handleWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!pool) {
+    sendJson(res, 500, { error: 'service misconfigured' })
+    return
+  }
+
+  // The signature covers the exact raw bytes, so read them before anything
+  // parses or transforms the body (INV-8). Same 256 KiB cap as /events
+  // (pinned), flushed as a 413 by the shared error path.
+  const raw = await readBody(req, MAX_BODY_BYTES)
+
+  // 1. Authenticate (401 for every failure mode — missing/empty headers,
+  //    unknown key, bad signature, stale timestamp — indistinguishable, so
+  //    the boundary leaks neither key existence nor which check failed).
+  const keyId = headerString(req.headers['x-key-id'])
+  const timestamp = headerString(req.headers['x-timestamp'])
+  const signature = headerString(req.headers['x-signature'])
+  if (!keyId || !timestamp || !signature) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+
+  // Tenant identity is the owner of the verifying secret, never the body.
+  const found = await pool.query(
+    'SELECT tenant_id, secret FROM webhook_secrets WHERE key_id = $1',
+    [keyId]
+  )
+  if (found.rowCount === 0) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+  const { tenant_id: secretTenant, secret } = found.rows[0] as {
+    tenant_id: string
+    secret: string
+  }
+
+  // HMAC-SHA256 over `{timestamp}.{key_id}.{raw_body}` — the algorithm is
+  // pinned HERE, server-side, never read from a header. Both sides are
+  // lowercase-hex strings compared as bytes: a length check first
+  // (timingSafeEqual throws on mismatch), and no lenient hex decode for a
+  // forged signature to be malleable through.
+  const expected = Buffer.from(
+    createHmac('sha256', secret).update(`${timestamp}.${keyId}.`).update(raw).digest('hex')
+  )
+  const given = Buffer.from(signature)
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+  const ts = Number(timestamp)
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > WEBHOOK_FRESHNESS_SECONDS) {
+    sendJson(res, 401, { error: 'unauthorized' })
+    return
+  }
+
+  // 2. Only now parse and validate (400): the bytes are authentic. The body
+  //    shape is pinned (GAP-11) and rates exactly like /events; body.tenant
+  //    is deliberately ignored — the secret owner wins (INV-4).
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw.toString('utf8'))
+  } catch {
+    sendJson(res, 400, { error: 'body is not valid JSON' })
+    return
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    sendJson(res, 400, { error: 'body must be a JSON object' })
+    return
+  }
+  const body = parsed as Record<string, unknown>
+
+  // The delivery id lives INSIDE the signed body; it feeds the same unique
+  // index as an idempotency key, so it carries the same 1..200 byte bound.
+  const deliveryId = body.event_id
+  if (
+    typeof deliveryId !== 'string' ||
+    deliveryId.length === 0 ||
+    Buffer.byteLength(deliveryId, 'utf8') > MAX_IDEMPOTENCY_KEY_BYTES
+  ) {
+    sendJson(res, 400, { error: 'event_id must be a string of 1..200 bytes' })
+    return
+  }
+  const metric = body.metric
+  if (typeof metric !== 'string' || !Object.hasOwn(PRICE_BOOK, metric)) {
+    sendJson(res, 400, { error: 'metric must be in the price book' })
+    return
+  }
+  const quantity = body.quantity
+  if (
+    typeof quantity !== 'number' ||
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    quantity > MAX_QUANTITY
+  ) {
+    sendJson(res, 400, { error: 'quantity must be an integer in [1, 10^12]' })
+    return
+  }
+  let eventDate: string
+  if (body.event_date === undefined) {
+    eventDate = new Date().toISOString()
+  } else {
+    if (
+      typeof body.event_date !== 'string' ||
+      !EVENT_DATE_RE.test(body.event_date) ||
+      !eventDateInWindow(new Date(body.event_date).getTime())
+    ) {
+      sendJson(res, 400, { error: 'event_date must parse and fall in (now-1y, now+1d)' })
+      return
+    }
+    eventDate = body.event_date
+  }
+
+  // 3. Enqueue exactly like /events. Dedup key wh:{key_id}:{delivery_id}
+  //    (GAP-9): namespaced so it can never collide with an api: idempotency
+  //    key, with the source segment binding it to the verifying secret. The
+  //    consumer dedups at the ledger and posts; nothing is posted here.
+  const eventId = `wh:${keyId}:${deliveryId}`
+  const rawEventDate = typeof body.event_date === 'string' ? body.event_date : null
+  const payloadHash = createHash('sha256')
+    .update(JSON.stringify([metric, quantity, rawEventDate]))
+    .digest('hex')
+
+  const outcome = await enqueue(pool, {
+    tenantId: secretTenant,
+    eventId,
+    payload: { metric, quantity },
+    payloadHash,
+    eventDate
+  })
+  if (outcome === 'conflict') {
+    sendJson(res, 409, { error: 'delivery id reused with a different payload' })
+    return
+  }
+  // 'created' and 'replay' both 202: an at-least-once provider retry is
+  // deduped to the single stored row and charged exactly once at the ledger.
+  sendJson(res, 202, { accepted: true, event_id: eventId })
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === 'GET' && req.url === '/healthz') {
     sendJson(res, 200, { ok: true, service: 'ingest' })
@@ -256,6 +403,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
   if (req.method === 'POST' && req.url === '/events') {
     await handleEvents(req, res)
+    return
+  }
+  if (req.method === 'POST' && req.url === '/webhooks/usage') {
+    await handleWebhook(req, res)
     return
   }
   sendJson(res, 404, { error: 'not found' })
