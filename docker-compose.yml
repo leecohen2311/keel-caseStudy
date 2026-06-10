@@ -44,6 +44,9 @@ services:
     environment:
       DATABASE_URL: postgres://app_ledger:ledger_pw_dev@postgres:5432/billing
       PORT: "3002"
+      # Same dev-only secret as ingest: one HS256 secret across both services,
+      # so the README's pre-minted tenant/admin JWTs verify here too.
+      JWT_SECRET: dev_jwt_secret_1
     ports:
       - "3002:3002"
     depends_on:
