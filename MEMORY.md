@@ -338,7 +338,7 @@ written and then run to confirm it **fails for the right reason** (route 404 / m
 behavior), **before any of that Phase 3-7 production code exists**. The tests are therefore the
 spec the coding agent builds to: each can only turn green on a correct implementation, never
 vacuously (a test that passed before the code existed would be testing nothing). Black-box, on
-branch `tests/phases-3-7` (test-only). 73 tests, 10 files: **72 red + 1 intentional green**.
+branch `tests/phases-3-7` (test-only). 78 tests, 10 files: **77 red + 1 intentional green**.
 The single green is a standing backstop (`app_ingest` cannot enqueue `kind='adjustment'`,
 already enforced by the Phase 1 column grant) — kept and clearly labeled because Phase 6's
 authorization story rests on it. `*.e2e.test.ts` files stay red until the relevant route
