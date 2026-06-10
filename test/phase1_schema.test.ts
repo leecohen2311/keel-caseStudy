@@ -23,6 +23,19 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  // This file deliberately writes constraint-probe debris (bare headers with
+  // no postings, dangling closures). Remove it as owner so the global
+  // standing invariant checks in later phases run over real data only.
+  for (const table of [
+    'postings',
+    'transactions',
+    'period_closures',
+    'billing_periods',
+    'event_queue',
+    'tenants'
+  ]) {
+    await owner.query(`DELETE FROM ${table} WHERE tenant_id = $1`, [tenantId])
+  }
   await owner.end()
   await ingest.end()
   await ledger.end()
