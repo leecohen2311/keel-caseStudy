@@ -333,12 +333,20 @@ consumer transaction reviewed hostile and surfaced below for the engineer.
 
 ### Phases 3-7 — failing test scaffold, TDD red (2026-06-10)
 
-**What:** All Phase 3-7 invariant/API tests written as failing (red) black-box tests on
+**What:** All Phase 3-7 invariant/API tests were written **red first** — every test was
+written and then run to confirm it **fails for the right reason** (route 404 / missing
+behavior), **before any of that Phase 3-7 production code exists**. The tests are therefore the
+spec the coding agent builds to: each can only turn green on a correct implementation, never
+vacuously (a test that passed before the code existed would be testing nothing). Black-box, on
 branch `tests/phases-3-7` (test-only). 73 tests, 10 files: **72 red + 1 intentional green**.
 The single green is a standing backstop (`app_ingest` cannot enqueue `kind='adjustment'`,
 already enforced by the Phase 1 column grant) — kept and clearly labeled because Phase 6's
 authorization story rests on it. `*.e2e.test.ts` files stay red until the relevant route
 **and** the Phase 2 consumer are both present.
+
+Build/verification order (oldest→newest commit): harness → P3 → P4 → P6 → P5 → P7, each
+RED-verified and adversarially reviewed before the next. Re-run any phase's red proof with
+`bash scripts/test.sh test/phase-N` (every assertion shows `expected 404 to be <code>`).
 
 **How we built it (reuse this loop — it is fast):**
 - **Black-box only.** Spawn the real services as child processes (`test/helpers/
