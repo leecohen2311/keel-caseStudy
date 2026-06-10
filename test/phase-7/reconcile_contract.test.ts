@@ -114,6 +114,14 @@ async function seedConsistentAdjustment(
   return { txnId: txn, eventId }
 }
 
+// Reconcile re-derives EVERY tenant globally, so a corruption test must not leak
+// its injected damage into later tests' (or other files') reconcile calls.
+async function wipeTenant(tenantId: string): Promise<void> {
+  await owner.query('DELETE FROM postings WHERE tenant_id = $1', [tenantId])
+  await owner.query('DELETE FROM transactions WHERE tenant_id = $1', [tenantId])
+  await owner.query('DELETE FROM event_queue WHERE tenant_id = $1', [tenantId])
+}
+
 function reconcile() {
   return postJson(url, {}, { token: adminToken() })
 }
@@ -153,6 +161,7 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
+    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('a deleted balanced pair is flagged (a done row with no header)', async () => {
@@ -165,6 +174,7 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
+    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('a symmetric scaling of both legs is flagged (zero-sum still holds)', async () => {
@@ -185,6 +195,7 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
+    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('an adjustment whose posted amount != enqueued amount_minor is flagged', async () => {
@@ -199,5 +210,6 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
+    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 })
