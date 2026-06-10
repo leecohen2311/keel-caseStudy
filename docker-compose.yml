@@ -30,6 +30,8 @@ services:
     environment:
       DATABASE_URL: postgres://app_ingest:ingest_pw_dev@postgres:5432/billing
       PORT: "3001"
+      # Dev-only secret; the pre-minted JWTs in README.md are signed with it.
+      JWT_SECRET: dev_jwt_secret_1
     ports:
       - "3001:3001"
     depends_on:

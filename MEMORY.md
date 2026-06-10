@@ -123,8 +123,10 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - Admin is an `admin: true` claim in the same HS256 token, same `JWT_SECRET`, with **no**
   `tenant_id` (admin is cross-tenant and takes its target tenant from the request body,
   the one allowed exception to scope-from-claim). A valid tenant token is rejected on
-  admin routes. Seed a pre-minted admin JWT in `seed/seed.sql` and document it in the
-  README (still deferred there as of Phase 2; close it when auth lands in Phase 3).
+  admin routes. **Admin credential closed in Phase 3:** the admin JWT is a claim, not a
+  database row — nothing is seeded in `seed/seed.sql` (its comment says so); the
+  pre-minted dev admin JWT (`admin: true`, no `tenant_id`, signed with the compose
+  `JWT_SECRET`) is documented in README.md alongside the tenant JWTs.
 
 **Money and validation.**
 - Integer minor units, `BIGINT`. No float column anywhere. In Node, amounts are strings
@@ -141,6 +143,22 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   JSON **numbers** in safe-integer range, never strings, so the consumer's
   `computeAmount` accepts them (the DB columns are `BIGINT`; the in-transit JSON doubles
   are exact because bounded below 2^53).
+- **GAP-8 pinned (Phase 3, surfaced for review):** a missing/non-string `body.tenant` on
+  `POST /events` returns **400** (it is a documented field of the brief's payload), not a
+  silent default to the token tenant; a present-but-mismatching `body.tenant` returns 403
+  before validation runs. No test constrains the missing case; flagged at the Phase 3
+  review gate.
+- **event_date wire format pinned (Phase 3):** a full timestamp with an explicit `Z` or
+  `±HH:MM` offset (`YYYY-MM-DD[T ]HH:MM:SS[.ffffff](Z|±HH:MM)`), else 400. Exactly the
+  shapes JS `Date` and Postgres `timestamptz` parse to the same instant; the divergent
+  shapes (JS `toString` format, date-only, timezone-less) are rejected up front so the
+  pinned else-400 can never degrade into an INSERT-time 500 (adversarial review finding,
+  reproduced live).
+- **idempotency_key bound pinned (Phase 3):** 1..200 UTF-8 bytes, else 400. The key feeds
+  `UNIQUE(tenant_id, event_id)`; an unbounded incompressible key overflows the btree
+  index-row cap (~2.7KB) into a 500, and an accepted giant key bloats the never-purged
+  queue. Apply the same bound to `/adjustments` (GAP-14) and the webhook delivery id when
+  those land.
 
 **Periods.**
 - Monthly. `period_key` is the UTC year-month of `event_date`, e.g. `2026-06`. Created
