@@ -217,7 +217,9 @@ usage in a later period.
 
 **Pin before implementing:** the statement body (e.g. per-transaction metric/quantity/
 amount_minor + period + total) and that amounts are BigInt-safe strings; confirm the query
-param is `period` in `YYYY-MM`.
+param is `period` in `YYYY-MM`. The body must contain **no per-response volatile field** (no
+`generated_at`/`as_of` render timestamp), so two reads of the same period are byte-identical —
+the reproducibility test deep-equals them.
 
 ## GAP-17 — adjustment event_date stamped by /adjustments (API-5, INV-7) — Phase 6
 

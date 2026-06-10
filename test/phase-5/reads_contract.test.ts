@@ -39,8 +39,13 @@ function currentPeriodKey(): string {
 }
 
 // Seed one balanced usage transaction (debit receivable / credit revenue) for a
-// tenant in a given period, as app_owner — the read API must re-derive this.
+// tenant in a given period, as app_owner — the read API must re-derive this. The
+// event_date is stamped INSIDE the booked month so the row is one the real
+// consumer could actually emit (its reroute books by max(event month, current
+// month)); a now()-dated row booked into a past month is impossible and would
+// let a statement that scopes by event_date pass on an empty body.
 async function seedUsage(tenantId: string, amountMinor: number, periodKey: string): Promise<void> {
+  const eventDate = `${periodKey}-15T12:00:00Z`
   await owner.query(
     `INSERT INTO billing_periods (tenant_id, period_key) VALUES ($1, $2)
      ON CONFLICT (tenant_id, period_key) DO NOTHING`,
@@ -56,8 +61,8 @@ async function seedUsage(tenantId: string, amountMinor: number, periodKey: strin
     await owner.query(
       `INSERT INTO transactions
          (tenant_id, originating_event_id, booked_period_id, kind, metric, quantity, event_date)
-       VALUES ($1, $2, $3, 'usage', 'api_call', $4, now()) RETURNING txn_id`,
-      [tenantId, `seed:${randomUUID()}`, p, amountMinor]
+       VALUES ($1, $2, $3, 'usage', 'api_call', $4, $5) RETURNING txn_id`,
+      [tenantId, `seed:${randomUUID()}`, p, amountMinor, eventDate]
     )
   ).rows[0].txn_id
   await owner.query(
@@ -117,9 +122,30 @@ describe('phase 5: GET /balance (INV-5, INV-4)', () => {
     expect(BigInt((res.body as { balance_minor: string }).balance_minor)).toBe(70n)
     expect(await receivable(owner, b)).toBe(999n) // sanity: b really does have its own
   })
+
+  test('balance for a tenant with no postings is 0', async () => {
+    const t = await newTenant(owner)
+    const res = await getJson(balanceUrl, { token: tenantToken(t) })
+    expect(res.status).toBe(200)
+    expect(BigInt((res.body as { balance_minor: string }).balance_minor)).toBe(0n)
+  })
+
+  test('balance is all-time: it sums receivable across periods', async () => {
+    const t = await newTenant(owner)
+    await seedUsage(t, 100, '2026-02')
+    await seedUsage(t, 40, currentPeriodKey())
+    const res = await getJson(balanceUrl, { token: tenantToken(t) })
+    expect(res.status).toBe(200)
+    expect(BigInt((res.body as { balance_minor: string }).balance_minor)).toBe(140n)
+    expect(await receivable(owner, t)).toBe(140n) // balance is not silently period-scoped
+  })
 })
 
 describe('phase 5: GET /statement (INV-4)', () => {
+  test('requires auth -> 401', async () => {
+    expect((await getJson(statementUrl)).status).toBe(401)
+  })
+
   test('defaults to the current period when no period is given', async () => {
     const t = await newTenant(owner)
     const period = currentPeriodKey()
@@ -129,26 +155,44 @@ describe('phase 5: GET /statement (INV-4)', () => {
     const explicit = await getJson(`${statementUrl}?period=${period}`, { token: tenantToken(t) })
     expect(def.status).toBe(200)
     expect(explicit.status).toBe(200)
-    // The default period IS the current period: identical bodies.
+    // Default == current period. Statement bodies carry no per-response volatile
+    // field (pinned GAP-16), so the deep-equal is stable.
     expect(def.body).toEqual(explicit.body)
   })
 
-  test('a closed-period statement is reproducible', async () => {
+  test('?period genuinely filters: different periods return different statements', async () => {
     const t = await newTenant(owner)
     const past = '2026-02'
+    const current = currentPeriodKey()
     await seedUsage(t, 500, past)
-    await closePeriodDirect(t, past) // immutable after close -> sum can never change
+    await seedUsage(t, 9999, current)
+
+    const pastStmt = await getJson(`${statementUrl}?period=${past}`, { token: tenantToken(t) })
+    const curStmt = await getJson(`${statementUrl}?period=${current}`, { token: tenantToken(t) })
+    expect(pastStmt.status).toBe(200)
+    expect(curStmt.status).toBe(200)
+    // A server that ignored ?period (returned all-time data, or always empty)
+    // would return identical bodies here — this forces ?period to actually filter.
+    expect(pastStmt.body).not.toEqual(curStmt.body)
+  })
+
+  test('a closed period statement shows its usage and is stable as the tenant accrues elsewhere', async () => {
+    const t = await newTenant(owner)
+    const past = '2026-02'
+    await seedUsage(t, 5000003, past) // 7-digit, distinctive: cannot collide with ids/timestamps
+    await closePeriodDirect(t, past)
 
     const first = await getJson(`${statementUrl}?period=${past}`, { token: tenantToken(t) })
     expect(first.status).toBe(200)
-    expect(first.body).toBeTruthy()
+    expect(JSON.stringify(first.body)).toContain('5000003') // the period's usage is really present
 
-    // The tenant keeps accruing usage in a LATER period; the closed period's
-    // statement must not drift (period-scoped + immutable after close).
+    // New activity in a LATER period must not change the past period's statement
+    // (period-scoped; the closed period's postings can never change). Close
+    // immutability under a write attempt is a Phase 6 concern, not this read test.
     await seedUsage(t, 777, currentPeriodKey())
 
     const second = await getJson(`${statementUrl}?period=${past}`, { token: tenantToken(t) })
     expect(second.status).toBe(200)
-    expect(second.body).toEqual(first.body) // reproducible despite new activity elsewhere
+    expect(second.body).toEqual(first.body) // stable / reproducible
   })
 })
