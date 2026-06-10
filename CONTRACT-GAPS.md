@@ -159,3 +159,34 @@ test includes a `tenant` field to prove it is dropped.
 
 **Pin before implementing:** the webhook body fields and whether `event_date` is accepted
 (defaulting to now() if absent, like `/events`).
+
+## GAP-12 — admin route response codes (API-5, API-6, INV-7) — Phase 6
+
+Pinned/derivable: `/adjustments` returns 202 (enqueued) and 409 (same key, different
+payload); both routes 401/403 on auth. **Not pinned:** the **success** code of
+`/periods/close`. Tests assert close success is **2xx** (and verify the `period_closures`
+row + status), and that the loser of a re-close / concurrent close gets **409**.
+
+**Pin before implementing:** the close success code (200 vs 204) if an exact assertion is
+wanted; 409 for re-close and the concurrent loser is assumed.
+
+## GAP-13 — Ledger boot: disable the internal consumer in tests (INV-3 harness) — Phase 6/5/7
+
+`src/ledger/main.ts` spawns the in-process consumer when `DATABASE_URL` is set. Contract
+tests need the enqueued adjustment to stay `pending` for inspection, so the harness starts
+the Ledger with a test-only env to skip the worker; e2e tests run an explicit worker.
+
+**Assumed:** `DISABLE_CONSUMER=1` makes `src/ledger/main.ts` serve HTTP without spawning the
+consumer. (Today the entrypoint ignores it; in the red phase the routes 404 so no race
+occurs yet.)
+
+**Pin before implementing:** honor `DISABLE_CONSUMER` (test-only), or provide another way to
+run the Ledger HTTP API without the worker.
+
+## GAP-14 — adjustment amount_minor validation range (API-5) — Phase 6
+
+MEMORY: `amount_minor` is "a nonzero integer in range." The numeric range is not pinned.
+Tests assert a **nonzero integer** is required (zero → 400, fractional → 400) and that
+`reason` and `idempotency_key` are required; they do not assert a specific min/max magnitude.
+
+**Pin before implementing:** the accepted magnitude bound for `amount_minor`, if any.
