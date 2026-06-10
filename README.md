@@ -28,23 +28,25 @@ If a first boot was ever interrupted mid-initialization, reset with
 npm install
 npm test    # full suite — includes the intentionally-red TDD scaffold (see below)
 
-# implemented phases only (all green, 76 tests):
+# implemented phases only (all green, 85 tests):
 bash scripts/test.sh test/phase0_infra.test.ts test/phase1_schema.test.ts \
-  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3 test/phase-4
+  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3 \
+  test/phase-4 test/phase-5
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
 migrations + seed, and runs the whole vitest suite. The repo is built
-test-first: the suites for not-yet-built phases (reads, admin
-adjustments/close, reconcile — `test/phase-5..7`) are committed red on purpose
+test-first: the suites for not-yet-built phases (admin
+adjustments/close, reconcile — `test/phase-6..7`) are committed red on purpose
 and stay red until their phase ships, so the full run currently exits failing
 **by design**. The implemented-phases command above is the green gate: infra
 checks, schema/grant invariants (append-only, dedup boundary, tenant binding),
 the consumer's crash-injection tests — a real child-process worker SIGKILLed
 at four in-transaction boundaries — plus redelivery, poison/dead-letter,
 closed-period reroute, two-worker concurrency, the Phase 3 tenant API
-(JWT hardening, validation, request idempotency, ingest crash hook), and the
-Phase 4 signed webhook (forged/tampered/stale/replayed deliveries).
+(JWT hardening, validation, request idempotency, ingest crash hook), the
+Phase 4 signed webhook (forged/tampered/stale/replayed deliveries), and the
+Phase 5 reads (derived balance, tenant isolation, reproducible statements).
 
 Requires Docker and Node >= 24.
 
@@ -97,8 +99,21 @@ curl -i http://localhost:3001/events \
 
 `202` once the queue row is durably committed; the same key + same payload
 replays the 202, the same key + a different payload returns `409`. The ledger
-consumer rates and posts it within ~250ms (`GET /balance` ships with its
-phase).
+consumer rates and posts it within ~250ms.
+
+### Read the balance and statement
+
+```bash
+curl -s http://localhost:3002/balance \
+  -H "Authorization: Bearer <tenant_alpha JWT>"
+# {"balance_minor":"100"} — derived per read: SUM over the receivable postings
+
+curl -s "http://localhost:3002/statement?period=2026-06" \
+  -H "Authorization: Bearer <tenant_alpha JWT>"
+# {"period":"2026-06","lines":[{txn_id, kind, metric, quantity, event_date,
+#  amount_minor}...],"total_minor":"100"} — ?period defaults to the current
+#  UTC month; amounts are BigInt-safe decimal strings
+```
 
 ### Submit usage via the signed webhook
 
