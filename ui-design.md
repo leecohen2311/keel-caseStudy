@@ -4,6 +4,12 @@ A clean, editorial, "system-intelligence" aesthetic: airy light-gray canvas, nea
 display type, thin hairline rules, generously rounded glass cards, and a restrained
 steel-blue / sky-cyan accent. Typography does the heavy lifting; color is quiet.
 
+**Two registers, one DNA.** Sections 1–6 are the *editorial shell* — the airy, light,
+marketing-facing surface above. Sections 7–10 are the *operational console* — the dark,
+dense, instrument surface the billing ledger itself runs on: tables of postings, derived
+balances, reconciliation flags, queue rows in flight. Same typeface, same mono, same cool
+palette; opposite density. The shell sells the system; the console **is** the system.
+
 > Fonts and design tokens below are extracted from the live site
 > (`https://argonav-site.vercel.app/`). Sizes marked _(est.)_ are read from the reference
 > screenshot — the site's exposed Tailwind type scale tops out at `text-4xl`, so hero
@@ -305,3 +311,147 @@ Four equal columns inside one `rounded-2xl` panel, separated by **single vertica
 5. **Float the figure.** Imagery/diagrams live on a single hero card with a tall soft
    `--shadow-lg`; everything else stays flat on the canvas.
 6. **Generous air.** Roomy padding, calm motion (`--motion-ease-veil`), no visual noise.
+
+---
+
+## 7. Operational console
+
+> Sections 7–10 are a **designed extension** of the `space-blue` dark theme (§2) and the
+> Fragment Mono system (§1), not extracted from the live site. Only the status palette (§9)
+> adds new hues.
+
+The shell is airy because it is selling. The console is dense because it is *operating*: a
+billing ledger is an instrument. It sinks into the dark `space-blue` ground, builds depth
+from surface steps instead of shadow, and squares its corners enough to read as a tool.
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| `--con-bg` | `#060f1c` _(space-blue-900)_ | Canvas |
+| `--con-surface` | `#0b1a2d` _(space-blue-800)_ | Panels, tables |
+| `--con-raised` | `#112439` _(space-blue-700)_ | Header / toolbar rows |
+| `--con-hover` | `#1b3149` _(space-blue-600)_ | Row hover, selection |
+| `--con-rule` | `#ffffff14` _(8% white)_ | Hairlines |
+| `--con-ink` | `#f2f5f8` | Data |
+| `--con-ink-dim` | `#9fb0c4` | Labels, meta, closed state |
+| `--con-accent` | `#7dd2f3` | Focus, links, live |
+
+```css
+:root {
+  --con-radius: 3px;                            /* sharp — buttons, badges, panels */
+  --con-focus:  0 0 0 1px var(--con-accent);    /* 1px ring, never a glow */
+}
+```
+
+Depth is the surface steps above; shadow stays a whisper. Motion is snappier than the shell —
+state lands in ~120ms — so the instrument feels like it answers the instant you touch it.
+
+---
+
+## 8. Numbers
+
+A ledger is mostly numbers, so the numbers carry the system. **Every number in a column is
+Fragment Mono, `tabular-nums`, right-aligned** — money, quantity, balances, counts — so
+columns stack and a wrong digit jumps out.
+
+```css
+.num { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums;
+       text-align: right; color: var(--con-ink); }
+```
+
+Money is rendered from exact integer minor units (the no-float invariant), never computed in
+the UI: scale to the currency exponent, group, sign forward. `1234567` → `12,345.67`. A debit
+and its zero-sum credit sit on the same mono grid (`+12,500.00` over `−12,500.00`), so a
+balanced pair is eyeball-checkable.
+
+Ids keep their namespace prefix (`api:` `wh:` `adj:`) dimmed in `--con-ink-dim`, truncated
+mid-string (`wh:9f3a…21`), full on hover. Timestamps are mono, ISO-8601 UTC.
+
+Rows default to a **compact** density (30px, `13px` text); a single statement read relaxes to
+44px.
+
+---
+
+## 9. Status palette
+
+The shell keeps color quiet; the console can't, because state is the one thing the operator
+must read at a glance. Four cool-leaning intents sit on the navy ground. Color is always
+paired with a glyph and a label — never alone — and a closed/sealed state uses the neutral
+`--con-ink-dim`. The mapping is fixed, so the same state always wears the same color.
+
+| Intent | Ink | Surface | Ledger state |
+|--------|-----|---------|--------------|
+| Active | `#7dd2f3` | `#7dd2f31a` | Claimed lease, live, period open |
+| Posted | `#46cf9c` | `#46cf9c1a` | Balanced posting, reconciled clean, done, verified |
+| Pending | `#e3b04b` | `#e3b04b1a` | Pending queue row, straggler, retrying |
+| Flagged | `#e2606a` | `#e2606a1a` | Drift, dead-letter, forged or rejected delivery |
+
+```css
+:root {
+  --int-active: #7dd2f3;  --int-active-surface: #7dd2f31a;
+  --int-ok:     #46cf9c;  --int-ok-surface:     #46cf9c1a;
+  --int-warn:   #e3b04b;  --int-warn-surface:   #e3b04b1a;
+  --int-danger: #e2606a;  --int-danger-surface: #e2606a1a;
+}
+```
+
+---
+
+## 10. Components
+
+Four pieces cover every screen the ledger needs to test.
+
+**Classification bar** — the top strip: one line of situational awareness before any data.
+`--con-raised`, mono caps, hairline base. A live `--int-active` dot, the tenant, the period
+and its state, the last reconcile time.
+
+```
+● LEDGER · LIVE   │   TENANT acme-co   │   PERIOD 2026-06 · OPEN   │   RECON 17:04:33Z
+```
+
+**Data table** — the workhorse for statements and postings. Mono-caps sticky header on
+`--con-raised`, `--con-rule` row hairlines, numerics right-aligned and tabular. The two legs
+of a transaction share a `txn_id` and a 2px `--con-accent` left rule so a zero-sum pair reads
+as one unit; hover → `--con-hover`, flagged → `--int-danger-surface` wash.
+
+```
+ TXN ID         ACCOUNT       METRIC       QTY        AMOUNT     STATUS
+─────────────────────────────────────────────────────────────────────────
+▏wh:9f3a…21     revenue       api_calls   1,250    +12,500.00   ● POSTED
+▏wh:9f3a…21     receivable    api_calls   1,250    −12,500.00   ● POSTED
+ adj:5e10…9c    revenue       —              —      −2,000.00   ● POSTED
+```
+
+**Status badge** — small, sharp, mono caps, intent surface + ink, leading glyph (the glyph
+carries the state when the hue can't):
+
+```
+● POSTED    ◌ PENDING    ⟳ CLAIMED    ▲ FLAGGED    ■ CLOSED
+```
+
+```css
+.badge { font-family: var(--font-family-mono); font-size: 11px; letter-spacing: .08em;
+         text-transform: uppercase; padding: 2px 6px; border-radius: var(--con-radius);
+         display: inline-flex; align-items: center; gap: 5px; }
+.badge--ok     { color: var(--int-ok);     background: var(--int-ok-surface); }
+.badge--warn   { color: var(--int-warn);   background: var(--int-warn-surface); }
+.badge--active { color: var(--int-active); background: var(--int-active-surface); }
+.badge--danger { color: var(--int-danger); background: var(--int-danger-surface); }
+.badge--muted  { color: var(--con-ink-dim); background: #ffffff0f; }   /* CLOSED */
+```
+
+**Balance readout** — the dashboard headline: a large tabular-mono figure, a mono-caps label,
+an intent-tinted delta. Reuses the station-numeral DNA from §5, turned operational.
+
+```
+BALANCE · USD
+12,345.67
+▲ +1,204.00  today
+```
+
+---
+
+### Three rules for the console
+
+1. **Instrument, not brochure.** Optimize for reading dense truth fast; air is the shell's job.
+2. **Every number is mono and tabular.** Columns must stack.
+3. **Color is state, never decoration.** Four intents, each paired with a glyph and a label.
