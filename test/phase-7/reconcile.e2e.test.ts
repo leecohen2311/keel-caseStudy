@@ -57,22 +57,31 @@ function reconcile() {
 describe('phase 7 e2e: reconcile under concurrent consumer load (REC-3)', () => {
   test('reports no false positives while events are being drained', async () => {
     const t = await newTenant(owner)
-    for (let i = 1; i <= 30; i++) await enqueuePending(t, i)
+    // A big batch so the worker cannot drain it within the reconcile-hammer
+    // window — this guarantees reconcile genuinely overlaps in-flight events
+    // rather than racing an already-empty queue.
+    for (let i = 1; i <= 300; i++) await enqueuePending(t, i)
 
+    let maxPendingDuringReconcile = 0
     const worker = startWorker()
     try {
       // Hammer reconcile while the queue still has pending/in-flight events. Each
       // call must come back clean: a half-applied event is never visible.
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
+        maxPendingDuringReconcile = Math.max(maxPendingDuringReconcile, await pendingCount(t))
         const res = await reconcile()
         expect(res.status).toBe(200)
         expect((res.body as { ok: boolean }).ok).toBe(true)
         await new Promise((r) => setTimeout(r, 40))
       }
-      await until(async () => (await pendingCount(t)) === 0, 'all events drained')
+      await until(async () => (await pendingCount(t)) === 0, 'all events drained', 30_000)
     } finally {
       await stopWorker(worker)
     }
+
+    // Fail loudly if the batch drained before any reconcile saw in-flight events,
+    // which would make the ok:true assertions above pass vacuously.
+    expect(maxPendingDuringReconcile).toBeGreaterThan(0)
 
     // And clean once everything has settled.
     const final = await reconcile()

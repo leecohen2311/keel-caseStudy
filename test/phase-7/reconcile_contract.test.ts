@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { makePool, newTenant, sweepPending } from '../helpers/db.ts'
@@ -31,6 +31,19 @@ afterAll(async () => {
   await svc.stop()
   await owner.end()
 })
+
+// Every test registers its tenant here; afterEach wipes them so a corruption
+// injection can never leak into a later test's GLOBAL reconcile — even if an
+// assert throws (afterEach always runs, unlike an inline cleanup line).
+const dirtyTenants: string[] = []
+afterEach(async () => {
+  for (const tid of dirtyTenants.splice(0)) await wipeTenant(tid)
+})
+async function freshTenant(): Promise<string> {
+  const t = await newTenant(owner, 'phase7 recon tenant')
+  dirtyTenants.push(t)
+  return t
+}
 
 function currentPeriodKey(): string {
   const d = new Date()
@@ -128,7 +141,7 @@ function reconcile() {
 
 describe('phase 7: /reconcile authorization (INV-6)', () => {
   test('a tenant token -> 403', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     expect((await postJson(url, {}, { token: tenantToken(t) })).status).toBe(403)
   })
 
@@ -139,7 +152,7 @@ describe('phase 7: /reconcile authorization (INV-6)', () => {
 
 describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
   test('a clean, consistent ledger reconciles with no discrepancies (REC-3 baseline)', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     await seedConsistentUsage(t, 100)
     await seedConsistentUsage(t, 250)
     await seedConsistentAdjustment(t, -75)
@@ -150,7 +163,7 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
   })
 
   test('a tampered posting is flagged', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     const { txnId } = await seedConsistentUsage(t, 100)
     // Inflate one leg: now posted (101) != re-rated (100), and zero-sum breaks too.
     await owner.query(
@@ -161,11 +174,10 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
-    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('a deleted balanced pair is flagged (a done row with no header)', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     const { txnId } = await seedConsistentUsage(t, 100)
     // Remove the whole transaction; the `done` queue row is now orphaned.
     await owner.query('DELETE FROM postings WHERE txn_id = $1', [txnId])
@@ -174,11 +186,10 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
-    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('a symmetric scaling of both legs is flagged (zero-sum still holds)', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     const { txnId } = await seedConsistentUsage(t, 100)
     // Double both legs: nets to zero (fools zero-sum), but posted 200 != re-rated 100.
     await owner.query(
@@ -195,11 +206,10 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
-    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
   })
 
   test('an adjustment whose posted amount != enqueued amount_minor is flagged', async () => {
-    const t = await newTenant(owner)
+    const t = await freshTenant()
     const { txnId } = await seedConsistentAdjustment(t, 300)
     // Symmetric scale: zero-sum holds, but posted 600 != enqueued amount_minor 300.
     await owner.query(
@@ -210,6 +220,23 @@ describe('phase 7: /reconcile detects injected corruption (REC-2)', () => {
     const res = await reconcile()
     expect(res.status).toBe(200)
     expect((res.body as { ok: boolean }).ok).toBe(false)
-    await wipeTenant(t) // global reconcile: don't leak this corruption to other tests
+  })
+
+  test('an altered queue payload is flagged even though postings and header agree', async () => {
+    // The decisive proof that reconcile re-derives from the QUEUE (the independent
+    // record), never the header: tamper ONLY the queue payload. The header and the
+    // postings still agree (100), so a header-based re-rate would MISS this; only a
+    // queue-based re-rate (200 enqueued vs 100 posted) catches the undercharge.
+    const t = await freshTenant()
+    const { eventId } = await seedConsistentUsage(t, 100) // queue == header == posting == 100
+    await owner.query(
+      `UPDATE event_queue SET payload = jsonb_set(payload, '{quantity}', '200')
+        WHERE tenant_id = $1 AND event_id = $2`,
+      [t, eventId]
+    )
+
+    const res = await reconcile()
+    expect(res.status).toBe(200)
+    expect((res.body as { ok: boolean }).ok).toBe(false)
   })
 })
