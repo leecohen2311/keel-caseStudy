@@ -115,7 +115,7 @@ app_ingest : INSERT (all columns EXCEPT kind), SELECT on event_queue;  -- kind d
              SELECT on tenants, webhook_secrets. Cannot enqueue an adjustment.
 app_ledger : INSERT, SELECT on transactions, postings, period_closures;
              INSERT, SELECT, UPDATE(status) on billing_periods;  -- INSERT for lazy creation; UPDATE column-limited; no DELETE
-             INSERT (incl. kind), SELECT, UPDATE on event_queue;
+             INSERT (incl. kind), SELECT, UPDATE(status, attempts, processed_at) on event_queue;  -- UPDATE column-limited; payload/event_id/payload_hash immutable to runtime
              SELECT on tenants, webhook_secrets.
              No UPDATE/DELETE/TRUNCATE on the financial tables.
 ```

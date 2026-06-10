@@ -5,21 +5,26 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (post second adversarial review)._
+_Last updated: 2026-06-10 (Phases 0-2 complete, Phase 2 checkpoint passed)._
 
 ## Current status
 
-**Done:** Design docs written and through two adversarial review passes. The second pass
-(verified against the brief in REQUIREMENTS.md) found brief-compliance gaps, real
-concurrency races in the pinned design, and schema holes. All folded into the docs
-below before any code.
+**Done:** Design docs through two adversarial review passes, then **Phases 0-2 built
+under TDD and pushed to main** (red commit, green commit, review-fix pair, MEMORY phase
+log — per phase; see the Phase log below). 37 tests green from a clean database:
+infra, schema/grant invariants, and the consumer with real SIGKILL crash injection at
+four in-transaction boundaries, redelivery dedup, poison dead-letter, the three
+closed-period reroute scenarios, and a two-worker concurrency drain. **The Phase 2
+hard checkpoint passed**: each phase's adversarial review verdicts and fixes are in
+the Phase log. Grant deviation (app_ledger INSERT on billing_periods) approved by the
+engineer and folded into the pinned contract.
 
-**Next:** `git init`, commit the docs as the baseline (no code yet, small commits, do
-not squash, per DEL-1), then the coding agent runs **Phases 0 through 2** under TDD.
-**Phase 2 is a hard checkpoint:** exactly-once and real SIGKILL crash-injection tests
-green and the consumer transaction surfaced for review before any API work.
+**Next:** the reviewer agent does its adversarial read of the consumer transaction
+(`src/ledger/consumer.ts` + the Phase 2 test list), then green-light **Phase 3**
+(ingest tenant API: validation, request idempotency, JWT hardening — see PLAN.md).
 
-**Not started:** all code.
+**In progress elsewhere:** a `tests/phases-3-7` branch with early Phase 3+ scaffolding
+(test/helpers/, test/phase-3/, CONTRACT-GAPS.md), to be merged later.
 
 ## Decisions (decided / why / rejected)
 
@@ -149,9 +154,13 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - `app_ledger`: `INSERT, SELECT` on `transactions`, `postings`, `period_closures`;
   `INSERT, SELECT, UPDATE(status)` on `billing_periods` (INSERT for lazy period
   creation in the reroute loop; UPDATE column-limited to `status`; no DELETE, so a period
-  can be created and closed but never removed); `INSERT` (all columns, including `kind`)`,
-  SELECT, UPDATE` on `event_queue`; `SELECT` on `tenants`, `webhook_secrets`. No
+  can be created and closed but never removed); `INSERT` (all columns, including `kind`),
+  `SELECT`, `UPDATE(status, attempts, processed_at)` on `event_queue` (UPDATE
+  column-limited so `payload`/`event_id`/`payload_hash` stay immutable to the runtime,
+  protecting the reconcile source of truth); `SELECT` on `tenants`, `webhook_secrets`. No
   `UPDATE`/`DELETE`/`TRUNCATE` on the financial tables.
+- `app_ingest`'s `INSERT` column list also excludes `status` and `attempts`, so a
+  compromised Ingest cannot enqueue a row pre-set to `done`.
 
 **Schema hardening (Phase 1 migrations).**
 - `transactions`: `txn_id` PK, `tenant_id`, `originating_event_id` NOT NULL,
@@ -321,6 +330,59 @@ invariant-safe).
 
 **Phase 2 hard checkpoint: PASSED.** Exactly-once + real SIGKILL tests green;
 consumer transaction reviewed hostile and surfaced below for the engineer.
+
+### Phases 3-7 — failing test scaffold, TDD red (2026-06-10)
+
+**What:** All Phase 3-7 invariant/API tests were written **red first** — every test was
+written and then run to confirm it **fails for the right reason** (route 404 / missing
+behavior), **before any of that Phase 3-7 production code exists**. The tests are therefore the
+spec the coding agent builds to: each can only turn green on a correct implementation, never
+vacuously (a test that passed before the code existed would be testing nothing). Black-box, on
+branch `tests/phases-3-7` (test-only). 78 tests, 10 files: **77 red + 1 intentional green**.
+The single green is a standing backstop (`app_ingest` cannot enqueue `kind='adjustment'`,
+already enforced by the Phase 1 column grant) — kept and clearly labeled because Phase 6's
+authorization story rests on it. `*.e2e.test.ts` files stay red until the relevant route
+**and** the Phase 2 consumer are both present.
+
+Build/verification order (oldest→newest commit): harness → P3 → P4 → P6 → P5 → P7, each
+RED-verified and adversarially reviewed before the next. Re-run any phase's red proof with
+`bash scripts/test.sh test/phase-N` (every assertion shows `expected 404 to be <code>`).
+
+**How we built it (reuse this loop — it is fast):**
+- **Black-box only.** Spawn the real services as child processes (`test/helpers/
+  ingest-server.ts`, `ledger-server.ts` — `node src/<svc>/main.ts`; Node 24 runs `.ts`
+  directly) and hit HTTP; assert on status codes + DB state (`event_queue`, `transactions`,
+  `postings`, `billing_periods`, `period_closures`). No imports of internal prod modules.
+- **Shared harness** under `test/helpers/` (separate from the Phase 0-2 `test/helpers.ts`;
+  dedupe at merge): `db.ts` (role pools, fixtures, state queries), `jwt.ts` (hand-rolled
+  HS256 mint + `alg:none`/expired/wrong-secret forgers — no lib, so adversarial tokens are
+  forgeable), `webhook.ts` (HMAC signing), `http.ts`, `ingest-server.ts`/`ledger-server.ts`/
+  `worker.ts` (spawn + drain).
+- **Per-phase loop:** write red tests → `bash scripts/test.sh test/phase-N` and confirm each
+  fails for the RIGHT reason (route 404, not a typo) → adversarial 3-lens review
+  (red-ability, contract fidelity, harness/flakiness) → fold fixes → small test-only commit.
+  Built in priority order 4, 6, 3, 5, 7 (4/6 highest value).
+- **Unpinned contracts are logged, never invented:** `CONTRACT-GAPS.md` (GAP-1..18). Pin
+  these in MEMORY before implementing.
+
+**Boot/run contracts the coding agent must honor (the tests assume these):**
+- Ingest & Ledger read `PORT`, `DATABASE_URL` (own role), `JWT_SECRET` (HS256, no default).
+- JWT: tenant scope in the `tenant_id` claim; `exp` enforced; admin via an `admin:true`
+  claim (GAP-7). Wrong-role-on-route → 401/403.
+- Ingest needs test-only `INGEST_CRASH_POINT=before-enqueue-commit` for the crash test (GAP-6).
+- Ledger needs test-only `DISABLE_CONSUMER=1` so contract tests see a stable pending row
+  (GAP-13) — **load-bearing; must land before the admin/read routes.**
+- Webhook: hex HMAC-SHA256 over `{timestamp}.{key_id}.{raw_body}`; unknown key → 401
+  (GAP-9/10). Reconcile: 200 with `{ ok, discrepancies }`, 200 even when flagging (GAP-18).
+
+**Coverage:** P3 `/events` (auth incl. alg:none/expired, validation, body.tenant→403,
+idempotency 202/409, return-after-commit; e2e charge + retry-once; crash-before-commit). P4
+`/webhooks/usage` (bad/missing/stale/tampered/unknown-key→401, timestamp-binding, secret-owner
+wins; e2e mutated-id→0 postings, replay charged once). P5 `/balance`==SUM(receivable),
+cross-tenant isolation, `/statement` default + closed-reproducible. P6 admin 403, adjustments
+202/409 + e2e posts-once/nets-zero/reroute-past-closed, close idle / re-close-409 /
+concurrent-one-winner. P7 reconcile flags tamper/delete/symmetric-scale/adjustment-mismatch,
+zero false positives under load.
 
 ## Open / pick up next time
 
