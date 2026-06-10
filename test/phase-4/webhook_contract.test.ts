@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { makePool, sweepPending, queueRows, newTenant, newWebhookSecret } from '../helpers/db.ts'
 import { makeUsageDelivery } from '../helpers/webhook.ts'
@@ -77,6 +78,28 @@ describe('phase 4: webhook signature rejection (INV-8)', () => {
     expect(res.status).toBe(401)
     expect(await queueRows(owner, sec.tenantId)).toHaveLength(0)
   })
+
+  test('an unknown X-Key-Id -> 401, nothing enqueued', async () => {
+    // A forged delivery naming a secret that does not exist. The boundary must
+    // reject it like a bad signature (401) and not leak key existence (GAP-9).
+    const before = await owner.query(`SELECT count(*)::int AS n FROM event_queue`)
+    const d = makeUsageDelivery({ keyId: `whk_${randomUUID().slice(0, 8)}`, secret: 'whsec_nope' })
+    const res = await postRaw(url, d.rawBody, { headers: d.headers })
+    expect(res.status).toBe(401)
+    const after = await owner.query(`SELECT count(*)::int AS n FROM event_queue`)
+    expect(after.rows[0].n).toBe(before.rows[0].n) // global: nothing enqueued
+  })
+
+  test('mutating X-Timestamp after signing breaks the signature -> 401', async () => {
+    // The timestamp is bound into the string-to-sign, so re-stamping a captured
+    // delivery to make it look fresh must fail verification.
+    const sec = await newWebhookSecret(owner)
+    const d = makeUsageDelivery({ keyId: sec.keyId, secret: sec.secret })
+    const restamped = String(Number(d.headers['X-Timestamp']) + 30)
+    const res = await postRaw(url, d.rawBody, { headers: { ...d.headers, 'X-Timestamp': restamped } })
+    expect(res.status).toBe(401)
+    expect(await queueRows(owner, sec.tenantId)).toHaveLength(0)
+  })
 })
 
 describe('phase 4: webhook acceptance and tenant attribution (INV-8, INV-4)', () => {
@@ -94,7 +117,7 @@ describe('phase 4: webhook acceptance and tenant attribution (INV-8, INV-4)', ()
     const rows = await queueRows(owner, sec.tenantId)
     expect(rows).toHaveLength(1)
     const row = rows[0]
-    expect(row.tenant_id ?? sec.tenantId).toBeTruthy()
+    expect(row.tenant_id).toBe(sec.tenantId) // attributed to the secret owner
     expect(row.kind).toBe('usage')
     expect(row.status).toBe('pending')
     // The delivery id is the dedup-relevant tail of a wh:-namespaced key. The

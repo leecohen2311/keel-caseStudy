@@ -35,6 +35,14 @@ async function pendingCount(tenantId: string): Promise<number> {
   return r.rows[0].n
 }
 
+async function doneCount(tenantId: string): Promise<number> {
+  const r = await owner.query(
+    `SELECT count(*)::int AS n FROM event_queue WHERE tenant_id = $1 AND status = 'done'`,
+    [tenantId]
+  )
+  return r.rows[0].n
+}
+
 describe('phase 4 e2e: signed webhook becomes a balanced charge', () => {
   test('a valid signed delivery flows to one balanced posting for the secret owner', async () => {
     const sec = await newWebhookSecret(owner)
@@ -43,7 +51,9 @@ describe('phase 4 e2e: signed webhook becomes a balanced charge', () => {
 
     const worker = startWorker()
     try {
-      await until(async () => (await pendingCount(sec.tenantId)) === 0, 'delivery drained')
+      // doneCount===1 (not just pending===0) so a dead-lettered row surfaces as a
+      // labelled drain timeout rather than a downstream count mismatch.
+      await until(async () => (await doneCount(sec.tenantId)) === 1, 'delivery posted (done)')
     } finally {
       await stopWorker(worker)
     }

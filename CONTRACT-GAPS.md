@@ -131,6 +131,10 @@ under any reasonable source naming as long as the delivery id is in the key.
 
 **Pin before implementing:** that `{source}` is the `X-Key-Id`.
 
+An `X-Key-Id` that resolves to **no** secret is assumed to return **401** (indistinguishable
+from a bad signature, so the boundary does not leak key existence) and enqueue nothing. A
+test asserts this with a global `event_queue` count (no tenant exists for an unknown key).
+
 ## GAP-10 — X-Signature encoding, X-Timestamp format, freshness tolerance (INV-8) — Phase 4
 
 The wire contract pins the string-to-sign (`{timestamp}.{key_id}.{raw_body}`), HMAC-SHA256,

@@ -68,7 +68,7 @@ export async function sweepPending(owner: pg.Pool): Promise<void> {
 // event_queue rows a tenant owns, oldest first.
 export async function queueRows(owner: pg.Pool, tenantId: string) {
   const r = await owner.query(
-    `SELECT queue_id, event_id, kind, status, attempts, payload, payload_hash, event_date
+    `SELECT queue_id, tenant_id, event_id, kind, status, attempts, payload, payload_hash, event_date
        FROM event_queue WHERE tenant_id = $1 ORDER BY queue_id`,
     [tenantId]
   )
