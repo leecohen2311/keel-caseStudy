@@ -261,6 +261,56 @@ Those tests are mandatory, not optional. Also intentional: usage headers
 allow NULL metric/quantity (nullable for adjustments); reconcile re-rates
 from the queue, never trusts the header.
 
+### Phase 2 — the consumer (2026-06-10)
+
+**What happened:** TDD: 16 failing tests committed first (balanced-pair
+rating, adjustment posting, redelivery dedup, rival-claim SKIP LOCKED, poison
+dead-after-5, guarded failure bookkeeping, the three reroute scenarios
+including the deterministic mid-reroute close race, real SIGKILL at four
+in-transaction boundaries + after-commit redelivery, two-worker 30-event
+drain). Then the implementation: `processOne` as one READ COMMITTED
+transaction exactly per ARCHITECTURE §3, `consumer-worker.ts` as a spawnable
+child process (the SIGKILL harness kills the production artifact), pricebook,
+ledger main spawns + respawns the worker. One cross-file fix: Phase 1's
+constraint-probe debris (bare headers) now cleans itself up so global
+standing invariant checks run over real data. 34 tests green, compose stack
+verified end to end.
+
+**Review found (3-lens multi-agent adversarial review — crash boundaries,
+concurrency/locking, conformance/test-honesty — every non-NIT finding
+adversarially verified by a skeptic against the live DB; all three lenses:
+pass-with-fixes):**
+1. CONFIRMED: consumer skipped the pinned event_date re-validation — a
+   compromised app_ingest could mint a 2999-06 billing period and book real
+   postings there (reproduced live); 5-digit years silently misrouted via the
+   lexicographic key compare; pre-1000 years burned retries on the period_key
+   CHECK. 2. CONFIRMED: bare `BEGIN` inherited the server-default isolation
+   while the whole lock protocol depends on READ COMMITTED; at REPEATABLE
+   READ the get-or-create throws 40001 storms and INV-7 safety would rest on
+   the discardable status-cache write (reproduced live). 3. REFUTED by the
+   skeptic (7/7 trials): the claim that connection blips dead-letter
+   legitimate charges — the worker dies on the unhandled socket error before
+   recordFailure can run; row stays pending; respawn posts exactly once.
+   NITs: adjustment magnitude bound missing; header event_date lost
+   microseconds in the Date round-trip.
+
+**Solved (TDD, red committed before green):** event_date re-validated in the
+consumer against the pinned (now-1y, now+1d) window before any period is
+minted — out-of-window is poison (dead), never a misbooked charge;
+`BEGIN ISOLATION LEVEL READ COMMITTED` pinned explicitly; adjustment
+|amount_minor| bounded by 10^12 like quantity; event_date carried as text
+into the header so it mirrors the queue exactly. 37 tests green.
+
+**Deferred to Phase 8 (logged, not hidden):** worker supervision polish
+(orphan on parent SIGTERM, unconditional 1s respawn, healthz green without a
+live consumer), lock_timeout against a wedged close transaction (liveness
+only, no invariant at risk), client-level 'error' listener (connection death
+currently surfaces as a crash-respawn, which the skeptic proved
+invariant-safe).
+
+**Phase 2 hard checkpoint: PASSED.** Exactly-once + real SIGKILL tests green;
+consumer transaction reviewed hostile and surfaced below for the engineer.
+
 ## Open / pick up next time
 
 JWT claim shape and `JWT_SECRET` handling finalized before Phase 3 (auth hardening,
