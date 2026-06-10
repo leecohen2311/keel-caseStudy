@@ -187,6 +187,43 @@ the postings, so a symmetric tamper that fools zero-sum still shows up. Tests: c
 as `app_owner`, tamper a posting or delete a pair, expect a flag; run under concurrent
 consumer load, expect zero flags.
 
+## Phase log (what happened / what review found / what was solved)
+
+### Phase 0 — scaffold and infra (2026-06-10)
+
+**What happened:** Baseline docs committed and pushed to GitHub
+(leecohen2311/keel-caseStudy, author leecohen23@gmail.com). TDD: failing infra
+tests committed first (migrations recorded, runner idempotent, runtime roles
+cannot CREATE/DROP, healthz 200), then the implementation: raw-SQL migration
+runner (per-file transactions, advisory lock), 0001 tenants+webhook_secrets,
+idempotent seed, healthz entrypoints, compose with one-shot migrate container,
+throwaway tmpfs test Postgres, README. One-command `docker compose up --build`
+verified end to end. New working rules added to CLAUDE.md this session:
+per-phase review gate (review + fix-commit + MEMORY entry between phases) and
+simplicity-always.
+
+**Review found (adversarial pass, verdict pass-with-fixes):**
+1. Advisory lock taken after `CREATE TABLE IF NOT EXISTS schema_migrations` —
+   two first-run migrators can race the DDL. 2. Test compose shared the
+   directory-derived project name — `npm test`'s `down -v --remove-orphans`
+   could delete the running dev stack. 3. README overclaimed (advertised
+   SIGKILL/concurrency tests that don't exist yet). 4. Interrupted first boot
+   leaves a half-initialized pgdata volume with no documented reset.
+   5. `webhook_secrets.algo` column contradicted the pinned
+   "algorithm pinned server-side" contract. 6. Idempotency test passed
+   vacuously on silent no-op. 7. Host port 5432 mapping breaks machines with
+   local Postgres.
+
+**Solved:** all of the above — lock before DDL, `name: billing-test`, honest
+README + `down -v` reset line, dropped `algo`, stdout assert
+`0 newly applied`, dropped the 5432 mapping.
+
+**Accepted (logged, not hidden):** no failed-migration-path test (runner
+correctness verified by review; PLAN doesn't require it); runtime roles retain
+default CONNECT to postgres/template1 (no persistent CREATE anywhere, claim
+holds); admin credential / pre-minted JWTs deferred from the Phase 0 seed to
+Phase 3 where auth lands.
+
 ## Open / pick up next time
 
 JWT claim shape and `JWT_SECRET` handling finalized before Phase 3 (auth hardening,
