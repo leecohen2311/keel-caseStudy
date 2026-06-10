@@ -5,21 +5,26 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (post second adversarial review)._
+_Last updated: 2026-06-10 (Phases 0-2 complete, Phase 2 checkpoint passed)._
 
 ## Current status
 
-**Done:** Design docs written and through two adversarial review passes. The second pass
-(verified against the brief in REQUIREMENTS.md) found brief-compliance gaps, real
-concurrency races in the pinned design, and schema holes. All folded into the docs
-below before any code.
+**Done:** Design docs through two adversarial review passes, then **Phases 0-2 built
+under TDD and pushed to main** (red commit, green commit, review-fix pair, MEMORY phase
+log — per phase; see the Phase log below). 37 tests green from a clean database:
+infra, schema/grant invariants, and the consumer with real SIGKILL crash injection at
+four in-transaction boundaries, redelivery dedup, poison dead-letter, the three
+closed-period reroute scenarios, and a two-worker concurrency drain. **The Phase 2
+hard checkpoint passed**: each phase's adversarial review verdicts and fixes are in
+the Phase log. Grant deviation (app_ledger INSERT on billing_periods) approved by the
+engineer and folded into the pinned contract.
 
-**Next:** `git init`, commit the docs as the baseline (no code yet, small commits, do
-not squash, per DEL-1), then the coding agent runs **Phases 0 through 2** under TDD.
-**Phase 2 is a hard checkpoint:** exactly-once and real SIGKILL crash-injection tests
-green and the consumer transaction surfaced for review before any API work.
+**Next:** the reviewer agent does its adversarial read of the consumer transaction
+(`src/ledger/consumer.ts` + the Phase 2 test list), then green-light **Phase 3**
+(ingest tenant API: validation, request idempotency, JWT hardening — see PLAN.md).
 
-**Not started:** all code.
+**In progress elsewhere:** a `tests/phases-3-7` branch with early Phase 3+ scaffolding
+(test/helpers/, test/phase-3/, CONTRACT-GAPS.md), to be merged later.
 
 ## Decisions (decided / why / rejected)
 
@@ -149,9 +154,13 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - `app_ledger`: `INSERT, SELECT` on `transactions`, `postings`, `period_closures`;
   `INSERT, SELECT, UPDATE(status)` on `billing_periods` (INSERT for lazy period
   creation in the reroute loop; UPDATE column-limited to `status`; no DELETE, so a period
-  can be created and closed but never removed); `INSERT` (all columns, including `kind`)`,
-  SELECT, UPDATE` on `event_queue`; `SELECT` on `tenants`, `webhook_secrets`. No
+  can be created and closed but never removed); `INSERT` (all columns, including `kind`),
+  `SELECT`, `UPDATE(status, attempts, processed_at)` on `event_queue` (UPDATE
+  column-limited so `payload`/`event_id`/`payload_hash` stay immutable to the runtime,
+  protecting the reconcile source of truth); `SELECT` on `tenants`, `webhook_secrets`. No
   `UPDATE`/`DELETE`/`TRUNCATE` on the financial tables.
+- `app_ingest`'s `INSERT` column list also excludes `status` and `attempts`, so a
+  compromised Ingest cannot enqueue a row pre-set to `done`.
 
 **Schema hardening (Phase 1 migrations).**
 - `transactions`: `txn_id` PK, `tenant_id`, `originating_event_id` NOT NULL,
