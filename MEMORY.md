@@ -83,6 +83,15 @@ green and the consumer transaction surfaced for review before any API work.
   process from day one** so the real SIGKILL harness works in Phase 2.
 - **Phase 8 UI is kept** despite OOS-1, on the graders' explicit in-person instruction.
   Noted as an override in DESIGN.md. Still last and first-cut.
+- **Grant deviation approved by the engineer (2026-06-10):** `app_ledger` holds
+  `INSERT` on `billing_periods` (shipped in 0003, surfaced in the Phase 1 review, now
+  folded into the pinned contract above). Why: the consumer's reroute loop and close
+  both get-or-create period rows lazily; the pinned design cannot run without it. Safe
+  because creating an open period row has no financial effect — the guarded action is
+  closure (append-only `period_closures`), and with no DELETE a period can be created
+  and closed but never removed. Rejected: pre-creating periods on a schedule (extra
+  moving part, new failure mode) and owner-mediated creation (crosses the role boundary
+  inside the consumer transaction).
 
 ## Pinned contracts for the coding agent
 
@@ -138,9 +147,11 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   defaults to `usage`), plus `SELECT` on `event_queue`; `SELECT` on `tenants`,
   `webhook_secrets`. Nothing on the financial tables, and cannot enqueue an adjustment.
 - `app_ledger`: `INSERT, SELECT` on `transactions`, `postings`, `period_closures`;
-  `SELECT, UPDATE(status)` on `billing_periods` (column-limited); `INSERT` (all columns,
-  including `kind`)`, SELECT, UPDATE` on `event_queue`; `SELECT` on `tenants`,
-  `webhook_secrets`. No `UPDATE`/`DELETE`/`TRUNCATE` on the financial tables.
+  `INSERT, SELECT, UPDATE(status)` on `billing_periods` (INSERT for lazy period
+  creation in the reroute loop; UPDATE column-limited to `status`; no DELETE, so a period
+  can be created and closed but never removed); `INSERT` (all columns, including `kind`)`,
+  SELECT, UPDATE` on `event_queue`; `SELECT` on `tenants`, `webhook_secrets`. No
+  `UPDATE`/`DELETE`/`TRUNCATE` on the financial tables.
 
 **Schema hardening (Phase 1 migrations).**
 - `transactions`: `txn_id` PK, `tenant_id`, `originating_event_id` NOT NULL,

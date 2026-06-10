@@ -114,7 +114,7 @@ app_owner  : full DDL, runs migrations and seed.
 app_ingest : INSERT (all columns EXCEPT kind), SELECT on event_queue;  -- kind defaults to 'usage'
              SELECT on tenants, webhook_secrets. Cannot enqueue an adjustment.
 app_ledger : INSERT, SELECT on transactions, postings, period_closures;
-             SELECT, UPDATE(status) on billing_periods;     -- column-limited
+             INSERT, SELECT, UPDATE(status) on billing_periods;  -- INSERT for lazy creation; UPDATE column-limited; no DELETE
              INSERT (incl. kind), SELECT, UPDATE on event_queue;
              SELECT on tenants, webhook_secrets.
              No UPDATE/DELETE/TRUNCATE on the financial tables.
