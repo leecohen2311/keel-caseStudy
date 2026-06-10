@@ -26,16 +26,24 @@ If a first boot was ever interrupted mid-initialization, reset with
 
 ```bash
 npm install
-npm test
+npm test    # full suite — includes the intentionally-red TDD scaffold (see below)
+
+# implemented phases only (all green, 64 tests):
+bash scripts/test.sh test/phase0_infra.test.ts test/phase1_schema.test.ts \
+  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the vitest suite: infra checks, schema/grant
-invariants (append-only, dedup boundary, tenant binding), and the consumer's
-crash-injection tests — a real child-process worker SIGKILLed at four
-in-transaction boundaries — plus redelivery, poison/dead-letter, closed-period
-reroute, and two-worker concurrency tests. The suite grows with each phase
-(APIs, webhook, close, reconcile still to come).
+migrations + seed, and runs the whole vitest suite. The repo is built
+test-first: the suites for not-yet-built phases (webhook, reads, admin
+adjustments/close, reconcile — `test/phase-4..7`) are committed red on purpose
+and stay red until their phase ships, so the full run currently exits failing
+**by design**. The implemented-phases command above is the green gate: infra
+checks, schema/grant invariants (append-only, dedup boundary, tenant binding),
+the consumer's crash-injection tests — a real child-process worker SIGKILLed
+at four in-transaction boundaries — plus redelivery, poison/dead-letter,
+closed-period reroute, two-worker concurrency, and the Phase 3 tenant API
+(JWT hardening, validation, request idempotency, ingest crash hook).
 
 Requires Docker and Node >= 24.
 

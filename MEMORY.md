@@ -5,7 +5,8 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-2 complete, Phase 2 checkpoint passed)._
+_Last updated: 2026-06-10 (Phases 0-3 complete; Phase 3 gate run, pending engineer
+sign-off)._
 
 ## Current status
 
@@ -19,12 +20,16 @@ hard checkpoint passed**: each phase's adversarial review verdicts and fixes are
 the Phase log. Grant deviation (app_ledger INSERT on billing_periods) approved by the
 engineer and folded into the pinned contract.
 
-**Next:** the reviewer agent does its adversarial read of the consumer transaction
-(`src/ledger/consumer.ts` + the Phase 2 test list), then green-light **Phase 3**
-(ingest tenant API: validation, request idempotency, JWT hardening — see PLAN.md).
+**Phase 3 (ingest tenant API) is built and gate-checked:** implementation commit
+`7034d77` plus a gate-fix commit; 64 tests green from a clean DB; the one-command
+compose stack proven end to end by the new `phase-gate` workflow (see the Phase 3 log
+below and the production-readiness-gate decision above).
 
-**In progress elsewhere:** a `tests/phases-3-7` branch with early Phase 3+ scaffolding
-(test/helpers/, test/phase-3/, CONTRACT-GAPS.md), to be merged later.
+**Next:** engineer sign-off on the Phase 3 boundary (enqueue transaction boundary and
+gate verdict are surfaced in-session), then **Phase 4** (signed webhook — see PLAN.md).
+
+**In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
+to main.
 
 ## Decisions (decided / why / rejected)
 
@@ -173,6 +178,9 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   index-row cap (~2.7KB) into a 500, and an accepted giant key bloats the never-purged
   queue. Apply the same bound to `/adjustments` (GAP-14) and the webhook delivery id when
   those land.
+- **Body cap pinned (Phase 3):** the `/events` JSON body is capped at 256 KiB → 413 (the
+  status is flushed to the client before the socket drops). The webhook raw-body route
+  gets its own pinned cap when Phase 4 lands.
 
 **Periods.**
 - Monthly. `period_key` is the UTC year-month of `event_date`, e.g. `2026-06`. Created
@@ -236,9 +244,10 @@ identical dedup, `FOR SHARE` period-lock, and reroute path as usage, taking the 
 signed `amount_minor` instead of rating. 409 on payload-hash mismatch is decided at
 enqueue against the queue, the same as usage.
 
-**Isolation.** Consumer / adjustments / close run at `READ COMMITTED` (the
-block-reread-reroute pattern depends on it). `POST /reconcile` runs at
-`REPEATABLE READ` for a stable snapshot (prevents false positives from in-flight
+**Isolation.** Consumer / adjustments / close — and, since Phase 3, the ingest enqueue
+(its duplicate-key conflict path is the same block-then-reread pattern) — run at
+explicitly pinned `READ COMMITTED`, never an inherited server default. `POST /reconcile`
+runs at `REPEATABLE READ` for a stable snapshot (prevents false positives from in-flight
 events).
 
 **Infra (Phase 0).** `git init` first. One `migrate` container runs migrations and the
@@ -437,6 +446,51 @@ cross-tenant isolation, `/statement` default + closed-reproducible. P6 admin 403
 202/409 + e2e posts-once/nets-zero/reroute-past-closed, close idle / re-close-409 /
 concurrent-one-winner. P7 reconcile flags tamper/delete/symmetric-scale/adjustment-mismatch,
 zero false positives under load.
+
+### Phase 3 — ingest tenant API (2026-06-10)
+
+**What happened:** TDD: the 27 Phase 3 tests were already red on main (scaffold commits
+`e8bf74f`/`e399766`); RED re-verified (all fail on route 404 / missing crash hook)
+before any production code. One green commit (`7034d77`): `POST /events` with
+hand-rolled pinned-HS256 JWT verification (shared `src/auth.ts`, strict base64url
+decode, exp enforced), the GAP-4 order authenticate→authorize→validate→enqueue,
+pinned validation bounds, `api:`-namespaced request idempotency (202 replay / 409
+mismatch via payload_hash), a commit-before-202 enqueue transaction at explicitly
+pinned READ COMMITTED, and the `INGEST_CRASH_POINT=before-enqueue-commit` hook.
+Pre-minted tenant+admin JWTs documented in README (compose `JWT_SECRET`), seed
+admin-TODO closed. 64 tests green from a clean DB.
+
+**Review found (3-lens multi-agent pre-commit review, every non-nit finding
+adversarially verified live by a skeptic; 0 refuted; fixes folded into `7034d77` and
+disclosed in its commit body):**
+1. MAJOR: event_date validated with the JS Date parser but stored via the Postgres
+   parser — `String(new Date())` input reproduced a 500 against the pinned else-400.
+   Fixed: strict ISO-with-explicit-offset gate (only shapes both parsers read
+   identically); format pinned. 2. MAJOR: bare `BEGIN` inherited server-default
+   isolation, regressing the pinned Phase 2 fix class; 40001→500 reproduced live at
+   REPEATABLE READ on concurrent same-key retries. Fixed: explicit READ COMMITTED,
+   pinned. 3. minor: unbounded idempotency_key overflowed the btree index row (~2.7KB)
+   into a 500 — bounded 1..200 bytes, pinned. 4. minor: the 413 was unreachable
+   (req.destroy() raced the response) — now flushes the status, then drops the socket.
+   5. minor: stale "seed admin JWT in seed.sql" pin — amended (claim, not row).
+   6. nits: README admin-route overclaim rephrased; lenient base64url signature decode
+   made strict. GAP-8 pinned: missing `body.tenant` → 400.
+
+**Production-readiness gate (first run of the new `phase-gate` workflow):** clean-DB
+suites 64/64; one-command compose cold boot + README-credential smoke proven end to
+end (202 / replay-202 / 409 / 403 / 401; consumer posted the balanced pair within
+seconds, receivable leg = 100, net zero; rejected requests enqueued nothing).
+Readiness checklist flagged one real item — the README test-run paragraph did not
+disclose that the intentionally-red Phase 4-7 scaffold makes full `npm test` exit
+failing by design — fixed in the gate-fix commit, along with folding the `/events`
+256 KiB→413 body cap and the ingest isolation pin into the pinned blocks.
+
+**Accepted (logged, not hidden):** no explicit slowloris timeout on the body read
+(bounded by Node 24's default headersTimeout/requestTimeout; one-liner if wanted);
+GAP-8's missing-tenant case remains test-unconstrained; this phase's review-fix
+behaviors were folded into the green commit without new red tests (review ran
+pre-commit) — subsequent phases run the gate post-commit with visible review-fix
+commits per the new CLAUDE.md rule.
 
 ## Open / pick up next time
 

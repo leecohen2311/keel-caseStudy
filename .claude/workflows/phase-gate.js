@@ -22,14 +22,16 @@ export const meta = {
 // skipReview / skipCompose  booleans (e.g. review already run inline this
 //         session against the identical diff — say so in `context`).
 // context free-text notes passed to every agent.
-if (!args || !args.phase || !args.range || !Array.isArray(args.suites)) {
+// Normalize: some invocation paths deliver args as a JSON-encoded string.
+const input = typeof args === 'string' ? JSON.parse(args) : args
+if (!input || !input.phase || !input.range || !Array.isArray(input.suites)) {
   throw new Error('phase-gate needs args { phase, range, suites[] } — see meta.whenToUse')
 }
-const PHASE = args.phase
-const RANGE = args.range
-const SUITES = args.suites
-const SMOKE = args.smoke ?? 'No API smoke beyond GET /healthz on both services.'
-const CONTEXT = args.context ?? ''
+const PHASE = input.phase
+const RANGE = input.range
+const SUITES = input.suites
+const SMOKE = input.smoke ?? 'No API smoke beyond GET /healthz on both services.'
+const CONTEXT = input.context ?? ''
 
 const COMMON = `
 You are a phase-boundary gate agent for the repo in the CURRENT WORKING DIRECTORY
@@ -149,7 +151,7 @@ ok=true only if EVERY test passes. Summarize counts and any failure tail verbati
   { label: 'gate:tests', phase: 'Deterministic', schema: RESULT }
 )
 
-const composeP = args.skipCompose
+const composeP = input.skipCompose
   ? Promise.resolve({ ok: true, summary: 'skipped by args.skipCompose' })
   : agent(
       COMMON +
@@ -168,7 +170,7 @@ ok=true only if boot + healthz + every smoke expectation held. Report each step'
       { label: 'gate:compose', phase: 'Deterministic', schema: RESULT }
     )
 
-const reviewP = args.skipReview
+const reviewP = input.skipReview
   ? Promise.resolve([])
   : pipeline(
       LENSES,
