@@ -190,3 +190,26 @@ Tests assert a **nonzero integer** is required (zero → 400, fractional → 400
 `reason` and `idempotency_key` are required; they do not assert a specific min/max magnitude.
 
 **Pin before implementing:** the accepted magnitude bound for `amount_minor`, if any.
+
+## GAP-15 — GET /balance response shape (API-3, INV-5) — Phase 5
+
+The balance value's JSON shape is not pinned. Money is BigInt minor units and `pg` returns
+`int8` as a string, so a numeric JSON field would lose precision past 2^53.
+
+**Assumed by the tests:** `GET /balance` → 200 with `{ balance_minor: "<string>" }`, a
+BigInt-safe decimal string the test parses with `BigInt(...)`. Auth required (401 without a
+token); tenant from the token (no tenant query param).
+
+**Pin before implementing:** the balance field name and that it is a string (not a JS number).
+
+## GAP-16 — GET /statement response shape + period param (API-4, INV-4) — Phase 5
+
+Pinned: tenant-scoped; `?period=YYYY-MM`, defaulting to the current period. The response
+**shape** (line items, totals, amount encoding) is not pinned. Tests are therefore
+shape-agnostic: they assert the default-period body equals the explicit current-period body,
+and that a closed period's statement is stable across reads even as the tenant accrues new
+usage in a later period.
+
+**Pin before implementing:** the statement body (e.g. per-transaction metric/quantity/
+amount_minor + period + total) and that amounts are BigInt-safe strings; confirm the query
+param is `period` in `YYYY-MM`.
