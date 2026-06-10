@@ -36,14 +36,9 @@ function currentPeriodKey(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-function nextPeriodKey(key: string): string {
-  const [y, m] = key.split('-').map(Number)
-  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
-}
-
-async function pendingCount(tenantId: string): Promise<number> {
+async function doneCount(tenantId: string): Promise<number> {
   const r = await owner.query(
-    `SELECT count(*)::int AS n FROM event_queue WHERE tenant_id = $1 AND status = 'pending'`,
+    `SELECT count(*)::int AS n FROM event_queue WHERE tenant_id = $1 AND status = 'done'`,
     [tenantId]
   )
   return r.rows[0].n
@@ -82,7 +77,7 @@ describe('phase 6 e2e: adjustments post through the consumer', () => {
 
     const worker = startWorker()
     try {
-      await until(async () => (await pendingCount(t)) === 0, 'adjustment drained')
+      await until(async () => (await doneCount(t)) === 1, 'adjustment posted (done)')
     } finally {
       await stopWorker(worker)
     }
@@ -104,7 +99,7 @@ describe('phase 6 e2e: adjustments post through the consumer', () => {
 
     const worker = startWorker()
     try {
-      await until(async () => (await pendingCount(t)) === 0, 'adjustment drained')
+      await until(async () => (await doneCount(t)) === 1, 'adjustment posted (done)')
     } finally {
       await stopWorker(worker)
     }
@@ -131,14 +126,27 @@ describe('phase 6 e2e: adjustments post through the consumer', () => {
 
     const worker = startWorker()
     try {
-      await until(async () => (await pendingCount(t)) === 0, 'adjustment drained')
+      await until(async () => (await doneCount(t)) === 1, 'adjustment posted (done)')
     } finally {
       await stopWorker(worker)
     }
 
+    // The adjustment's event_date is stamped now() at enqueue (CONTRACT-GAPS GAP-17),
+    // so it targets the (now-closed) current period and must reroute forward. Assert
+    // the robust invariant — it never books into the closed period and lands in an OPEN
+    // one — rather than an exact next month, which a UTC month-boundary roll could spoof.
     const periods = await txnPeriodKeys(t)
     expect(periods).toHaveLength(1)
-    expect(periods[0]).not.toBe(current) // not booked into the closed period
-    expect(periods[0]).toBe(nextPeriodKey(current)) // rerouted to the next open month
+    expect(periods[0]).not.toBe(current) // never the closed period
+    const landedClosed = await owner.query(
+      `SELECT EXISTS(
+         SELECT 1 FROM transactions tx
+           JOIN period_closures pc
+             ON pc.period_id = tx.booked_period_id AND pc.tenant_id = tx.tenant_id
+          WHERE tx.tenant_id = $1
+       ) AS closed`,
+      [t]
+    )
+    expect(landedClosed.rows[0].closed).toBe(false) // booked into an OPEN period
   })
 })

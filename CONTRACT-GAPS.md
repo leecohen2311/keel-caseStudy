@@ -180,8 +180,10 @@ the Ledger with a test-only env to skip the worker; e2e tests run an explicit wo
 consumer. (Today the entrypoint ignores it; in the red phase the routes 404 so no race
 occurs yet.)
 
-**Pin before implementing:** honor `DISABLE_CONSUMER` (test-only), or provide another way to
-run the Ledger HTTP API without the worker.
+**Implementation gate (load-bearing):** `src/ledger/main.ts` MUST skip spawning the consumer
+when `DISABLE_CONSUMER` is set, and this must land **before** the admin/read routes — otherwise
+the in-process worker drains the enqueued adjustment before the Phase 6 contract assertions read
+it, and the whole contract block flakes. The Phase 6 review must verify it.
 
 ## GAP-14 — adjustment amount_minor validation range (API-5) — Phase 6
 
@@ -189,7 +191,10 @@ MEMORY: `amount_minor` is "a nonzero integer in range." The numeric range is not
 Tests assert a **nonzero integer** is required (zero → 400, fractional → 400) and that
 `reason` and `idempotency_key` are required; they do not assert a specific min/max magnitude.
 
-**Pin before implementing:** the accepted magnitude bound for `amount_minor`, if any.
+**Pin before implementing:** the accepted magnitude bound for `amount_minor`, if any. No test
+asserts an over-magnitude rejection at the `/adjustments` boundary; the consumer dead-letters an
+over-bound adjustment (proven in Phase 2), so whether the boundary returns 400 or
+accepts-then-dead-letters is left to the implementation.
 
 ## GAP-15 — GET /balance response shape (API-3, INV-5) — Phase 5
 
@@ -213,3 +218,26 @@ usage in a later period.
 **Pin before implementing:** the statement body (e.g. per-transaction metric/quantity/
 amount_minor + period + total) and that amounts are BigInt-safe strings; confirm the query
 param is `period` in `YYYY-MM`.
+
+## GAP-17 — adjustment event_date stamped by /adjustments (API-5, INV-7) — Phase 6
+
+`event_queue.event_date` is NOT NULL, so `/adjustments` must stamp one, but the source is not
+pinned. The reroute rule is `target = max(month_of(event_date), current UTC month)`.
+
+**Assumed:** the route stamps `event_date = now()` at enqueue (mirrors `/events`' absent-date
+default). The reroute e2e relies on this so the adjustment targets the current period (which the
+test closes) and must reroute forward. The test asserts the robust invariant — the adjustment
+never books into the closed period and lands in an **open** one — not an exact month.
+
+**Pin before implementing:** adjustment `event_date = now()` at enqueue.
+
+## GAP-18 — POST /reconcile response shape (REC-1..3) — Phase 7
+
+The reconcile report shape is not pinned. Tests assume **200** with
+`{ ok: boolean, discrepancies: [...] }`: `ok === true` and no discrepancies on a clean ledger,
+`ok === false` when corruption is detected. Status is 200 even when flagging (a diagnostic
+report, not an error).
+
+**Pin before implementing:** the reconcile response (an `ok`/healthy boolean plus a list of
+discrepancies with enough detail to locate each), and that it returns 200 with findings rather
+than an error status.

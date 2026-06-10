@@ -155,7 +155,7 @@ describe('phase 6: authorization backstop (standing — enforced by the Phase 1 
          VALUES ($1, $2, 'adjustment', $3, 'h', now())`,
         [t, `adj:${randomUUID()}`, JSON.stringify({ amount_minor: -100, reason: 'forged' })]
       )
-    ).rejects.toThrow(/permission denied/i)
+    ).rejects.toMatchObject({ code: '42501' }) // insufficient_privilege, not a brittle text match
     expect(await queueRows(owner, t)).toHaveLength(0)
   })
 })
