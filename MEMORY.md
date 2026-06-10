@@ -88,6 +88,20 @@ engineer and folded into the pinned contract.
   process from day one** so the real SIGKILL harness works in Phase 2.
 - **Phase 8 UI is kept** despite OOS-1, on the graders' explicit in-person instruction.
   Noted as an override in DESIGN.md. Still last and first-cut.
+- **Phase-boundary production-readiness gate, mechanized (2026-06-10).** Every phase
+  ends with the saved `phase-gate` workflow (`.claude/workflows/phase-gate.js`, or
+  `/phase-gate <phase>`), run right **after** the implementation commit so review fixes
+  land as their own visible commits (the graded catch-and-fix story, DEL-5/EVAL-5).
+  Gate = clean-DB phase+regression suites, one-command compose boot + README-credential
+  smoke, 3-lens adversarial review with a skeptic verifying every non-nit finding, and
+  a docs/history honesty checklist; `ready: true` plus engineer sign-off gates the next
+  phase. Why: the Phase 3 review caught two verified majors no test covered (JS-vs-PG
+  event_date parser gap 500-vs-400; bare-BEGIN isolation regression of a pinned Phase 2
+  fix) while the diff was one phase wide and cheap to fix. Rejected: an end-of-build
+  batch gate (defects compound across phases, review quality drops with diff size, and
+  failures discovered at hour 22 are unfixable) and hook-based automation (a phase
+  boundary is not a harness-detectable event). The heavyweight whole-system pass remains
+  Phase 8; the per-phase gate feeds it.
 - **Grant deviation approved by the engineer (2026-06-10):** `app_ledger` holds
   `INSERT` on `billing_periods` (shipped in 0003, surfaced in the Phase 1 review, now
   folded into the pinned contract above). Why: the consumer's reroute loop and close

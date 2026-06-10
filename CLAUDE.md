@@ -73,6 +73,20 @@ Working rules:
   then implementation-commit), run an adversarial reviewer pass over it, commit the
   fixes, and append a MEMORY.md entry recording what happened, what the review found,
   and what was solved. No phase starts until the previous phase's review gate is done.
+- **Production-readiness gate (the review gate, mechanized).** Right after every phase's
+  implementation commit, run the saved `phase-gate` workflow
+  (`.claude/workflows/phase-gate.js`, or the `/phase-gate <phase>` command). It checks,
+  concurrently: the phase's suite plus full regression green from a clean DB; the
+  one-command compose stack boots and serves the phase's endpoints with the README
+  credentials; a 3-lens adversarial review of the phase diff (contract fidelity /
+  security / crash-and-transaction boundaries) with every non-nit finding adversarially
+  verified by a skeptic; and a docs/history honesty checklist (README never overclaims,
+  new contract decisions pinned in MEMORY.md, TDD visible in the commits, frozen files
+  untouched, gaps logged not hidden). Confirmed blockers/majors are fixed (red test
+  first when behavior-visible) and committed as their own visible review-fix commits,
+  then the gate re-runs. `ready: true` is necessary but not sufficient — the engineer
+  still signs off before the next phase starts. Slim the review fan-out for low-risk
+  phases (5, 9); never skip the tests/compose/honesty checks.
 - **Simplicity, always.** Do not overcomplicate anything. The simplest mechanism that
   preserves the invariants wins; anything beyond that is gold-plating and gets cut.
 

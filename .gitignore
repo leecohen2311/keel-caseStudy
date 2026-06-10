@@ -1,5 +1,9 @@
 node_modules/
 dist/
 .env
-.claude/
+# .claude is local state, except the tracked agent-process artifacts:
+# the phase-gate workflow and its command (part of the graded workflow).
+.claude/*
+!.claude/workflows/
+!.claude/commands/
 *.log
