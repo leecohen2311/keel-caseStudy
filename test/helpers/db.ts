@@ -42,6 +42,22 @@ export async function newTenant(owner: pg.Pool, label = 'phase3-7 tenant'): Prom
   return id
 }
 
+// A fresh webhook secret owned by a fresh (or given) tenant, so each webhook
+// test is isolated from the shared seeded secret and from other tests' charges.
+export async function newWebhookSecret(
+  owner: pg.Pool,
+  opts: { tenantId?: string } = {}
+): Promise<{ keyId: string; secret: string; tenantId: string }> {
+  const tenantId = opts.tenantId ?? (await newTenant(owner, 'webhook source tenant'))
+  const keyId = `whk_${randomUUID().slice(0, 8)}`
+  const secret = `whsec_${randomUUID()}`
+  await owner.query(
+    'INSERT INTO webhook_secrets (key_id, tenant_id, secret) VALUES ($1, $2, $3)',
+    [keyId, tenantId, secret]
+  )
+  return { keyId, secret, tenantId }
+}
+
 // Park stray pending rows so a spawned consumer in an e2e test cannot claim
 // another file's leftovers. 'dead', not 'done': reconcile must never mistake an
 // unprocessed test row for a posted event.

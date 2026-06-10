@@ -117,3 +117,41 @@ where `body.tenant` is **absent** is underspecified: does a missing `tenant` fie
 to avoid inventing the contract.
 
 **Pin before implementing:** missing `body.tenant` → 400, or default to the token tenant.
+
+## GAP-9 — webhook dedup key `{source}` segment (INV-8, INV-2) — Phase 4
+
+The dedup key is pinned as `wh:{source}:{event_id}` (MEMORY, ARCHITECTURE §6). `{event_id}`
+is the delivery id from the signed body. `{source}` is not explicitly defined; the only
+per-source identifier in the schema is `webhook_secrets.key_id` (the `X-Key-Id` value).
+
+**Assumed:** `{source}` is the `X-Key-Id` (so the queue `event_id` is
+`wh:{key_id}:{delivery_id}`). Tests do not hard-code the middle segment — they assert the
+queue row's `event_id` starts with `wh:` and ends with `:{delivery_id}` — so they pass
+under any reasonable source naming as long as the delivery id is in the key.
+
+**Pin before implementing:** that `{source}` is the `X-Key-Id`.
+
+## GAP-10 — X-Signature encoding, X-Timestamp format, freshness tolerance (INV-8) — Phase 4
+
+The wire contract pins the string-to-sign (`{timestamp}.{key_id}.{raw_body}`), HMAC-SHA256,
+raw-bytes-before-parse, constant-time compare, and a "~5 min" staleness window. Not pinned:
+the **encoding** of `X-Signature` and the **format** of `X-Timestamp`.
+
+**Assumed by the helper** (`test/helpers/webhook.ts`): `X-Signature` is lowercase **hex**;
+`X-Timestamp` is **unix seconds** (string). The stale test uses now − 10 min (well outside
+the window); the fresh tests use now.
+
+**Pin before implementing:** signature encoding (hex vs base64), timestamp unit, and the
+exact freshness tolerance (tests only rely on "10 min is rejected, now is accepted").
+
+## GAP-11 — webhook request body shape (API-2) — Phase 4
+
+Pinned: the delivery id is the body field `event_id`; the payload is "usage"; the tenant is
+the secret owner, not the body. The rest of the body shape is not pinned.
+
+**Assumed:** body `{ event_id, metric, quantity, event_date?, tenant? }`, where `tenant` is
+ignored and `metric`/`quantity` rate exactly like `POST /events`. The "body tenant ignored"
+test includes a `tenant` field to prove it is dropped.
+
+**Pin before implementing:** the webhook body fields and whether `event_date` is accepted
+(defaulting to now() if absent, like `/events`).
