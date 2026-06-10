@@ -28,22 +28,23 @@ If a first boot was ever interrupted mid-initialization, reset with
 npm install
 npm test    # full suite — includes the intentionally-red TDD scaffold (see below)
 
-# implemented phases only (all green, 64 tests):
+# implemented phases only (all green, 76 tests):
 bash scripts/test.sh test/phase0_infra.test.ts test/phase1_schema.test.ts \
-  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3
+  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3 test/phase-4
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
 migrations + seed, and runs the whole vitest suite. The repo is built
-test-first: the suites for not-yet-built phases (webhook, reads, admin
-adjustments/close, reconcile — `test/phase-4..7`) are committed red on purpose
+test-first: the suites for not-yet-built phases (reads, admin
+adjustments/close, reconcile — `test/phase-5..7`) are committed red on purpose
 and stay red until their phase ships, so the full run currently exits failing
 **by design**. The implemented-phases command above is the green gate: infra
 checks, schema/grant invariants (append-only, dedup boundary, tenant binding),
 the consumer's crash-injection tests — a real child-process worker SIGKILLed
 at four in-transaction boundaries — plus redelivery, poison/dead-letter,
-closed-period reroute, two-worker concurrency, and the Phase 3 tenant API
-(JWT hardening, validation, request idempotency, ingest crash hook).
+closed-period reroute, two-worker concurrency, the Phase 3 tenant API
+(JWT hardening, validation, request idempotency, ingest crash hook), and the
+Phase 4 signed webhook (forged/tampered/stale/replayed deliveries).
 
 Requires Docker and Node >= 24.
 
@@ -96,8 +97,32 @@ curl -i http://localhost:3001/events \
 
 `202` once the queue row is durably committed; the same key + same payload
 replays the 202, the same key + a different payload returns `409`. The ledger
-consumer rates and posts it within ~250ms (`GET /balance` and the webhook
-recipe ship with their phases).
+consumer rates and posts it within ~250ms (`GET /balance` ships with its
+phase).
+
+### Submit usage via the signed webhook
+
+Headers `X-Key-Id`, `X-Timestamp` (unix seconds), `X-Signature` —
+HMAC-SHA256 hex over `{timestamp}.{key_id}.{raw_body}`, algorithm pinned
+server-side. The delivery id (`event_id`) lives inside the signed body; the
+tenant is the owner of the verifying secret, never the body. Stale
+timestamps (±5 min), forged or tampered deliveries are rejected with 401;
+an identical replayed delivery is accepted (202) but charged exactly once.
+
+```bash
+BODY='{"event_id":"dlv-demo-1","metric":"api_call","quantity":5}'
+TS=$(date +%s)
+SIG=$(node -e "
+const { createHmac } = require('node:crypto');
+console.log(createHmac('sha256', 'whsec_dev_alpha_meterco_1')
+  .update(process.argv[1] + '.whk_alpha_meterco.' + process.argv[2])
+  .digest('hex'));
+" "$TS" "$BODY")
+
+curl -i http://localhost:3001/webhooks/usage \
+  -H "X-Key-Id: whk_alpha_meterco" -H "X-Timestamp: $TS" \
+  -H "X-Signature: $SIG" -d "$BODY"
+```
 
 ## Price book
 
