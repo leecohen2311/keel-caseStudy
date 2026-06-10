@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      # -h 127.0.0.1 forces TCP: the entrypoint's temporary init server only
+      # listens on the unix socket, so this stays red until init completes.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d billing"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: .
+    command: node scripts/migrate.ts
+    environment:
+      DATABASE_URL: postgres://app_owner:owner_pw_dev@postgres:5432/billing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ingest:
+    build: .
+    command: node src/ingest/main.ts
+    environment:
+      DATABASE_URL: postgres://app_ingest:ingest_pw_dev@postgres:5432/billing
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  ledger:
+    build: .
+    command: node src/ledger/main.ts
+    environment:
+      DATABASE_URL: postgres://app_ledger:ledger_pw_dev@postgres:5432/billing
+      PORT: "3002"
+    ports:
+      - "3002:3002"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

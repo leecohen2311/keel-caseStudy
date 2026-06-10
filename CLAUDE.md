@@ -69,6 +69,12 @@ Working rules:
 - **Ruthless triage.** Scope is larger than 24 hours. Cut gold-plating, log the cut in
   DESIGN.md. A narrow airtight core beats a feature-complete system that corrupts.
 - **Honest gaps over hidden ones.** A documented known gap beats a concealed one.
+- **Per-phase review gate.** Between every phase: commit the phase's work (test-commit
+  then implementation-commit), run an adversarial reviewer pass over it, commit the
+  fixes, and append a MEMORY.md entry recording what happened, what the review found,
+  and what was solved. No phase starts until the previous phase's review gate is done.
+- **Simplicity, always.** Do not overcomplicate anything. The simplest mechanism that
+  preserves the invariants wins; anything beyond that is gold-plating and gets cut.
 
 Document map: REQUIREMENTS.md (the grading contract, requirement IDs), PLAN.md (phased
 build order), ARCHITECTURE.md (deep technical reference), DESIGN.md (the concise graded
