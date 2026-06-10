@@ -205,6 +205,20 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   `event_id`); a header-only delivery id would let a replay mutate it past the
   signature. Dedup key = `wh:{source}:{event_id}`.
 - Tenant = owner of the secret found by `X-Key-Id`, never the body.
+- **GAP-9 pinned (Phase 4):** `{source}` is the `X-Key-Id`, so the queue `event_id` is
+  `wh:{key_id}:{delivery_id}`. An `X-Key-Id` that resolves to no secret returns **401**
+  (indistinguishable from a bad signature; the boundary does not leak key existence) and
+  enqueues nothing.
+- **GAP-10 pinned (Phase 4):** `X-Signature` is lowercase hex; `X-Timestamp` is unix
+  seconds; freshness tolerance is **300 s** either side of server now.
+- **GAP-11 pinned (Phase 4):** body `{event_id, metric, quantity, event_date?, tenant?}`.
+  `metric`/`quantity`/`event_date` validate exactly like `POST /events` (`event_date`
+  absent defaults to now()); `tenant` is ignored (the secret owner wins); `event_id` is
+  bounded 1..200 UTF-8 bytes like an idempotency key (it feeds the same unique index).
+  Post-verification validation failures are 400; same delivery id with a different
+  payload is 409 at enqueue, the same as `/events`.
+- **Webhook body cap pinned (Phase 4):** the raw-body route is capped at 256 KiB → 413,
+  the same bound and flush-then-drop behavior as `/events`.
 
 **Roles and grants.**
 - `app_owner`: DDL, migrations, seed.
