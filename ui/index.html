@@ -1,0 +1,261 @@
+<!doctype html>
+<!-- Argonav billing ledger — operational console (Phase 9).
+     A pure static client of the existing Ingest/Ledger APIs: no business
+     logic, no privileged path, nothing that can touch an invariant.
+     Styled against ui-design.md (operational console register, §7-10). -->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Argonav · Ledger Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500&family=Fragment+Mono&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Classification bar: one line of situational awareness (§10) -->
+  <header class="classbar">
+    <span class="classbar__item"><span class="dot dot--active"></span>LEDGER · CONSOLE</span>
+    <span class="classbar__sep"></span>
+    <label class="classbar__item" for="identity">ACTING&nbsp;AS
+      <select id="identity">
+        <option value="tenant_alpha" selected>tenant_alpha</option>
+        <option value="tenant_beta">tenant_beta</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+    <span class="classbar__sep"></span>
+    <span class="classbar__item classbar__urls" id="svc-urls">INGEST :3001 · LEDGER :3002</span>
+    <span class="classbar__spacer"></span>
+    <button class="classbar__item classbar__btn" id="theme-toggle" type="button">THEME</button>
+  </header>
+
+  <main class="wrap">
+
+    <p class="lede">
+      Every panel below drives one real endpoint and shows the exact request and the live
+      response. Flip <span class="mono">ACTING AS</span> to watch authorization work — an
+      admin action as a tenant returns the 403, a tenant read with the admin token (no
+      <span class="mono">tenant_id</span> claim) returns 401.
+    </p>
+
+    <details class="config">
+      <summary>Connection &amp; seeded credentials (dev-only, prefilled from README.md)</summary>
+      <div class="config__grid">
+        <label>Ingest base URL <input id="cfg-ingest" value="http://localhost:3001" /></label>
+        <label>Ledger base URL <input id="cfg-ledger" value="http://localhost:3002" /></label>
+        <label>tenant_alpha JWT <textarea id="cfg-token-tenant_alpha" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYWxwaGEiLCJpYXQiOjE3ODExMzEzMzIsImV4cCI6MjA4Mjc1ODQwMH0.8SQyVU7HbmNa-5dRQdFYwrChit5pyy-f9kqiMETAMIY</textarea></label>
+        <label>tenant_beta JWT <textarea id="cfg-token-tenant_beta" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYmV0YSIsImlhdCI6MTc4MTEzMTMzMiwiZXhwIjoyMDgyNzU4NDAwfQ.2mCsUzJ7dkRC0cG3kaGyjnUSRrWepaqMjXYKUG2Xm6Y</textarea></label>
+        <label>admin JWT <textarea id="cfg-token-admin" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbiI6dHJ1ZSwiaWF0IjoxNzgxMTMxMzMyLCJleHAiOjIwODI3NTg0MDB9.FZ6OTAE3EjyXl-EPy-lB52EL356UVZ0eW3haUeKaj-8</textarea></label>
+        <label>Webhook key id <input id="cfg-wh-key" value="whk_alpha_meterco" /></label>
+        <label>Webhook secret <input id="cfg-wh-secret" value="whsec_dev_alpha_meterco_1" />
+          <span class="hint">The secret lives in the page so the console can sign deliveries
+          in-browser (SubtleCrypto) — a local test convenience only; a real provider never
+          ships its secret to a client.</span></label>
+      </div>
+    </details>
+
+    <div class="grid">
+
+      <!-- 01 · Submit usage -->
+      <section class="panel" id="panel-events">
+        <header class="panel__head">
+          <span class="panel__num">01</span>
+          <div>
+            <h2 class="panel__title">Submit usage</h2>
+            <p class="panel__sub mono">POST /events · tenant token</p>
+          </div>
+        </header>
+        <form class="fields" id="form-events">
+          <label>Metric
+            <select id="ev-metric">
+              <option value="api_call" selected>api_call · rate 1</option>
+              <option value="storage_gb_hour">storage_gb_hour · rate 5</option>
+            </select>
+          </label>
+          <label>Quantity <input id="ev-quantity" type="number" value="100" min="1" /></label>
+          <label>event_date <span class="hint">optional, ISO with offset</span>
+            <input id="ev-date" placeholder="2026-06-10T12:00:00Z" /></label>
+          <label>idempotency_key
+            <span class="keyrow">
+              <input id="ev-key" />
+              <button type="button" class="btn btn--ghost" id="ev-newkey" title="generate a fresh key">↻ new key</button>
+            </span>
+          </label>
+        </form>
+        <div class="actions">
+          <button class="btn" id="ev-send" type="button">Send</button>
+          <span class="hint">Send twice with the same key → replayed 202. Change the
+            quantity but keep the key → 409.</span>
+        </div>
+        <div class="result" id="result-events" hidden></div>
+      </section>
+
+      <!-- 02 · Signed webhook -->
+      <section class="panel" id="panel-webhook">
+        <header class="panel__head">
+          <span class="panel__num">02</span>
+          <div>
+            <h2 class="panel__title">Signed webhook</h2>
+            <p class="panel__sub mono">POST /webhooks/usage · HMAC-SHA256, no JWT</p>
+          </div>
+        </header>
+        <form class="fields" id="form-webhook">
+          <label>Body event_id <span class="hint">the delivery id, inside the signed body</span>
+            <span class="keyrow">
+              <input id="wh-eventid" />
+              <button type="button" class="btn btn--ghost" id="wh-newid" title="generate a fresh delivery id">↻ new id</button>
+            </span>
+          </label>
+          <label>Metric
+            <select id="wh-metric">
+              <option value="api_call" selected>api_call · rate 1</option>
+              <option value="storage_gb_hour">storage_gb_hour · rate 5</option>
+            </select>
+          </label>
+          <label>Quantity <input id="wh-quantity" type="number" value="5" min="1" /></label>
+          <label>Timestamp <span class="hint">unix seconds; blank = now (±300s window)</span>
+            <input id="wh-ts" placeholder="auto" /></label>
+        </form>
+        <div class="actions">
+          <button class="btn" id="wh-send" type="button">Sign &amp; send</button>
+          <button class="btn btn--ghost" id="wh-replay" type="button" disabled>Replay last delivery</button>
+          <span class="hint">A byte-identical replay is accepted (202) but charged exactly
+            once — check the balance before and after.</span>
+        </div>
+        <div class="result" id="result-webhook" hidden></div>
+      </section>
+
+      <!-- 03 · Balance -->
+      <section class="panel" id="panel-balance">
+        <header class="panel__head">
+          <span class="panel__num">03</span>
+          <div>
+            <h2 class="panel__title">Balance</h2>
+            <p class="panel__sub mono">GET /balance · tenant token · derived per read</p>
+          </div>
+        </header>
+        <div class="readout" id="balance-readout" hidden>
+          <span class="readout__label mono">BALANCE · MINOR UNITS</span>
+          <span class="readout__value num" id="balance-value">—</span>
+        </div>
+        <div class="actions">
+          <button class="btn" id="bal-fetch" type="button">Fetch balance</button>
+          <span class="hint">Always SUM over the postings — never stored, so it cannot drift.</span>
+        </div>
+        <div class="result" id="result-balance" hidden></div>
+      </section>
+
+      <!-- 04 · Statement -->
+      <section class="panel" id="panel-statement">
+        <header class="panel__head">
+          <span class="panel__num">04</span>
+          <div>
+            <h2 class="panel__title">Statement</h2>
+            <p class="panel__sub mono">GET /statement?period=YYYY-MM · tenant token</p>
+          </div>
+        </header>
+        <form class="fields" id="form-statement">
+          <label>Period <input id="st-period" type="month" /></label>
+        </form>
+        <div class="actions">
+          <button class="btn" id="st-fetch" type="button">Fetch statement</button>
+        </div>
+        <div class="statement" id="statement-table" hidden></div>
+        <div class="result" id="result-statement" hidden></div>
+      </section>
+
+      <!-- 05 · Adjustment -->
+      <section class="panel" id="panel-adjustments">
+        <header class="panel__head">
+          <span class="panel__num">05</span>
+          <div>
+            <h2 class="panel__title">Adjustment</h2>
+            <p class="panel__sub mono">POST /adjustments · admin only</p>
+          </div>
+        </header>
+        <form class="fields" id="form-adjustments">
+          <label>Tenant
+            <select id="adj-tenant">
+              <option value="tenant_alpha" selected>tenant_alpha</option>
+              <option value="tenant_beta">tenant_beta</option>
+            </select>
+          </label>
+          <label>amount_minor <span class="hint">negative = credit</span>
+            <input id="adj-amount" type="number" value="-250" /></label>
+          <label>Reason <input id="adj-reason" value="goodwill credit" /></label>
+          <label>idempotency_key
+            <span class="keyrow">
+              <input id="adj-key" />
+              <button type="button" class="btn btn--ghost" id="adj-newkey" title="generate a fresh key">↻ new key</button>
+            </span>
+          </label>
+        </form>
+        <div class="actions">
+          <button class="btn" id="adj-send" type="button">Send</button>
+          <span class="hint">As a tenant identity this is the 403 demo. As admin it
+            enqueues (202) and the consumer posts it through the same crash-safe path
+            as usage.</span>
+        </div>
+        <div class="result" id="result-adjustments" hidden></div>
+      </section>
+
+      <!-- 06 · Close period -->
+      <section class="panel" id="panel-close">
+        <header class="panel__head">
+          <span class="panel__num">06</span>
+          <div>
+            <h2 class="panel__title">Close period</h2>
+            <p class="panel__sub mono">POST /periods/close · admin only · one winner</p>
+          </div>
+        </header>
+        <form class="fields" id="form-close">
+          <label>Tenant
+            <select id="cl-tenant">
+              <option value="tenant_alpha" selected>tenant_alpha</option>
+              <option value="tenant_beta">tenant_beta</option>
+            </select>
+          </label>
+          <label>Period <input id="cl-period" type="month" /></label>
+        </form>
+        <div class="actions">
+          <button class="btn" id="cl-send" type="button">Close period</button>
+          <span class="hint">First close → 200. Closing again → 409: a closed period is
+            immutable, and concurrent closes resolve to exactly one winner.</span>
+        </div>
+        <div class="result" id="result-close" hidden></div>
+      </section>
+
+      <!-- 07 · Reconcile -->
+      <section class="panel panel--wide" id="panel-reconcile">
+        <header class="panel__head">
+          <span class="panel__num">07</span>
+          <div>
+            <h2 class="panel__title">Reconcile</h2>
+            <p class="panel__sub mono">POST /reconcile · admin only · independent re-derivation</p>
+          </div>
+        </header>
+        <div class="actions">
+          <button class="btn" id="rec-run" type="button">Run reconcile</button>
+          <span class="hint">Re-derives every tenant from the queue's done rows and flags
+            drift; 200 even when flagging.</span>
+        </div>
+        <div class="recon" id="recon-report" hidden></div>
+        <div class="result" id="result-reconcile" hidden></div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="foot mono">
+    ARGONAV CASE STUDY · DEV CONSOLE — seeded dev credentials, permissive CORS, in-browser
+    webhook signing: local test conveniences, none of this is a production posture.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

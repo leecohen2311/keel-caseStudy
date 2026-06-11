@@ -51,8 +51,19 @@ class HttpError extends Error {
   }
 }
 
+// Dev-only CORS (Phase 9): the browser console under ui/ is a pure client on
+// its own origin, so every response — including errors, which the console
+// must be able to read to demo a 401/403 — carries permissive CORS headers,
+// and OPTIONS preflights are answered 204. A local/case-study convenience,
+// NOT a production posture; an additive header layer with no route logic.
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'Authorization, Content-Type, X-Key-Id, X-Timestamp, X-Signature'
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json' })
+  res.writeHead(status, { 'content-type': 'application/json', ...CORS_HEADERS })
   res.end(JSON.stringify(body))
 }
 
@@ -400,6 +411,12 @@ async function handleWebhook(req: IncomingMessage, res: ServerResponse): Promise
 }
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method === 'OPTIONS') {
+    // Dev-only CORS preflight (Phase 9); see CORS_HEADERS above.
+    res.writeHead(204, CORS_HEADERS)
+    res.end()
+    return
+  }
   if (req.method === 'GET' && req.url === '/healthz') {
     sendJson(res, 200, { ok: true, service: 'ingest' })
     return
@@ -421,7 +438,11 @@ const server = createServer((req, res) => {
       // Flush the status to the client first, then drop the socket (the 413
       // path may still have an unconsumed request body streaming in).
       if (!res.headersSent) {
-        res.writeHead(err.status, { 'content-type': 'application/json', connection: 'close' })
+        res.writeHead(err.status, {
+          'content-type': 'application/json',
+          connection: 'close',
+          ...CORS_HEADERS
+        })
         res.end(JSON.stringify({ error: err.message }), () => req.destroy())
       }
       return

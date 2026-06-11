@@ -14,10 +14,11 @@ docker compose up --build
 ```
 
 That single command starts Postgres, applies migrations and seed (one-shot
-`migrate` container), then starts both services:
+`migrate` container), then starts both services and the browser console:
 
 - Ingest: http://localhost:3001 (`GET /healthz`)
 - Ledger: http://localhost:3002 (`GET /healthz`)
+- Console (UI): http://localhost:8080
 
 If a first boot was ever interrupted mid-initialization, reset with
 `docker compose down -v` and rerun.
@@ -163,6 +164,45 @@ curl -i http://localhost:3001/webhooks/usage \
   -H "X-Key-Id: whk_alpha_meterco" -H "X-Timestamp: $TS" \
   -H "X-Signature: $SIG" -d "$BODY"
 ```
+
+## Try it in the browser
+
+`docker compose up --build` also serves a console at **http://localhost:8080**
+(static page under `ui/`, no build step). It is a pure client of the two
+APIs — every panel shows the exact request and the live response, with the
+seeded credentials prefilled. Dev conveniences, clearly not a production
+posture: permissive CORS on both services, and the seeded webhook secret in
+the page so the browser can sign deliveries with SubtleCrypto.
+
+Manual test checklist (one pass exercises every feature):
+
+1. **Identity.** The `ACTING AS` switcher in the top bar selects which seeded
+   JWT (from this README) every panel uses: `tenant_alpha`, `tenant_beta`, or
+   `admin`.
+2. **Submit usage (01).** As `tenant_alpha`, Send → `202`. Send again with the
+   same key → `202` (replay, charged once — check Balance). Change the
+   quantity but keep the key → `409`.
+3. **Signed webhook (02).** Sign & send → `202` (the page computes the
+   HMAC-SHA256 over `{timestamp}.{key_id}.{raw_body}` in-browser). "Replay
+   last delivery" resends the identical bytes → `202`, but Balance/Statement
+   show exactly one charge. Edit the timestamp to something stale (>5 min
+   old) → `401`.
+4. **Balance (03).** As `tenant_alpha`, Fetch → the derived sum. Switch to
+   `tenant_beta` → that tenant's own balance (isolation). As `admin` → `401`
+   (the admin token carries no `tenant_id`; reads are tenant-scoped).
+5. **Statement (04).** Pick the current month → the lines you just created,
+   with the total. Fetch twice — byte-identical (reproducible reads).
+6. **Adjustment (05).** As `tenant_alpha` → `403` (admin only). As `admin`,
+   Send a `-250` credit → `202`; Balance drops by 250 once, even if you Send
+   the same key again.
+7. **Close period (06).** As `admin`, close a past month (e.g. last month) →
+   `200`. Close it again → `409` (immutable close). New usage for a closed
+   month rolls forward to the open period — visible in Statement.
+8. **Reconcile (07).** As `admin` → green "ALL CLEAR". (Drift is flagged with
+   tenant/event/expected/posted rows; injecting it needs DB access — see the
+   phase-7 tests.)
+9. **Authorization, negative.** As `tenant_beta`, try Close period → `403`.
+   Remove/garble a token in the config panel → `401`.
 
 ## Price book
 

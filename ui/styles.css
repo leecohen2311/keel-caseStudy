@@ -1,0 +1,354 @@
+/* Argonav ledger console — tokens and component styles from ui-design.md.
+   Dark = the operational console register (§7-10), the primary surface.
+   Light = the editorial light theme (§2) mapped onto the same components. */
+
+:root {
+  --font-display: "Plus Jakarta Sans", "Jakarta Fallback", -apple-system, system-ui, sans-serif;
+  --font-mono: "Fragment Mono", "SF Mono", ui-monospace, monospace;
+
+  /* Status palette (§9) — fixed mapping, same in both themes */
+  --int-active: #7dd2f3;  --int-active-surface: #7dd2f31a;
+  --int-ok:     #46cf9c;  --int-ok-surface:     #46cf9c1a;
+  --int-warn:   #e3b04b;  --int-warn-surface:   #e3b04b1a;
+  --int-danger: #e2606a;  --int-danger-surface: #e2606a1a;
+
+  --con-radius: 3px;
+}
+
+html[data-theme="dark"] {
+  --bg:       #060f1c;  /* space-blue-900 */
+  --surface:  #0b1a2d;  /* space-blue-800 */
+  --raised:   #112439;  /* space-blue-700 */
+  --hover:    #1b3149;  /* space-blue-600 */
+  --rule:     #ffffff14;
+  --ink:      #f2f5f8;
+  --ink-dim:  #9fb0c4;
+  --accent:   #7dd2f3;
+  --focus:    0 0 0 1px var(--accent);
+}
+
+html[data-theme="light"] {
+  --bg:       #f5f5f7;
+  --surface:  #ffffff;
+  --raised:   #e5e5ea;
+  --hover:    #eef0f3;
+  --rule:     #1c1c1e1f;
+  --ink:      #1c1c1e;
+  --ink-dim:  #6e6e73;
+  --accent:   #2a6fa8;  /* steel blue: ink-on-light accent */
+  --focus:    0 0 0 1px var(--accent);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mono { font-family: var(--font-mono); }
+
+/* Every number is mono and tabular (§8) */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---- Classification bar (§10) -------------------------------------- */
+
+.classbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.classbar__sep { width: 1px; height: 16px; background: var(--rule); }
+.classbar__spacer { flex: 1; }
+.classbar__urls { color: var(--ink-dim); }
+.classbar__item select {
+  margin-left: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  font: inherit;
+  padding: 2px 6px;
+}
+.classbar__btn {
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  color: var(--ink-dim);
+  font: inherit;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+.classbar__btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+
+.dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+.dot--active { background: var(--int-active); box-shadow: 0 0 6px var(--int-active); }
+
+/* ---- Page frame ------------------------------------------------------ */
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 26px 20px 60px; }
+
+.lede {
+  max-width: 70ch;
+  color: var(--ink-dim);
+  letter-spacing: -0.005em;
+  margin: 4px 0 18px;
+}
+.lede .mono { font-size: 12px; color: var(--ink); }
+
+.config {
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  background: var(--surface);
+  margin-bottom: 22px;
+}
+.config summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.config[open] summary { border-bottom: 1px solid var(--rule); color: var(--ink); }
+.config__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px 18px;
+  padding: 14px;
+}
+
+/* ---- Panel grid ------------------------------------------------------ */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 18px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel--wide { grid-column: 1 / -1; }
+
+.panel__head { display: flex; align-items: flex-start; gap: 16px; }
+.panel__num {
+  font-family: var(--font-mono);
+  font-size: 2.6rem;
+  line-height: 1;
+  color: var(--ink-dim);
+  opacity: 0.45;
+}
+.panel__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: -0.018em;
+}
+.panel__sub { margin: 2px 0 0; font-size: 11px; color: var(--ink-dim); letter-spacing: 0.02em; }
+
+/* ---- Fields & buttons ------------------------------------------------ */
+
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; }
+.fields label, .config__grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.fields input, .fields select, .config__grid input, .config__grid textarea {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.fields input:focus, .fields select:focus, .config__grid input:focus,
+.config__grid textarea:focus, .btn:focus { outline: none; box-shadow: var(--focus); }
+.config__grid textarea { resize: vertical; word-break: break-all; }
+
+.keyrow { display: flex; gap: 6px; }
+.keyrow input { flex: 1; }
+
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hint { font-size: 11.5px; color: var(--ink-dim); max-width: 46ch; }
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--con-radius);
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: filter 120ms;
+}
+.btn:hover { filter: brightness(1.12); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn--ghost {
+  background: none;
+  color: var(--accent);
+  border-color: var(--rule);
+}
+.btn--ghost:hover { border-color: var(--accent); }
+
+/* ---- Result block ----------------------------------------------------- */
+
+.result {
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  background: var(--bg);
+  font-size: 12px;
+  overflow: hidden;
+}
+.result__req {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.result__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--rule);
+}
+.result__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-dim); }
+.result__body {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+  color: var(--ink);
+}
+
+/* ---- Status badges (§10) ---------------------------------------------- */
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--con-radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.badge--ok     { color: var(--int-ok);     background: var(--int-ok-surface); }
+.badge--warn   { color: var(--int-warn);   background: var(--int-warn-surface); }
+.badge--active { color: var(--int-active); background: var(--int-active-surface); }
+.badge--danger { color: var(--int-danger); background: var(--int-danger-surface); }
+.badge--muted  { color: var(--ink-dim);    background: #ffffff0f; }
+
+/* ---- Balance readout (§10) -------------------------------------------- */
+
+.readout { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 2px; }
+.readout__label { font-size: 11px; letter-spacing: 0.12em; color: var(--ink-dim); }
+.readout__value { font-size: 2.6rem; line-height: 1.1; text-align: left; }
+
+/* ---- Tables (statement, reconcile) ------------------------------------ */
+
+.statement table, .recon table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.statement th, .recon th {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-dim);
+  background: var(--raised);
+  padding: 7px 10px;
+  position: sticky;
+  top: 0;
+}
+.statement td, .recon td {
+  padding: 6px 10px;
+  border-top: 1px solid var(--rule);
+  height: 30px;  /* compact density (§8) */
+}
+.statement tr:hover td, .recon tr:hover td { background: var(--hover); }
+.statement .num, .recon .num { white-space: nowrap; }
+.statement th.num, .recon th.num { text-align: right; }
+.statement .id { font-family: var(--font-mono); color: var(--ink-dim); }
+.statement tfoot td {
+  border-top: 1px solid var(--ink-dim);
+  font-family: var(--font-mono);
+}
+.recon tr.flagged td { background: var(--int-danger-surface); }
+
+.recon__clear {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--con-radius);
+  background: var(--int-ok-surface);
+  color: var(--int-ok);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.foot {
+  text-align: center;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  padding: 18px 20px 26px;
+  border-top: 1px solid var(--rule);
+}

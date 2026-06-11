@@ -53,5 +53,14 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Dev console (Phase 9): a static page that exercises every endpoint from
+  # the browser. Pure client of the two APIs — no logic, no privileged path.
+  ui:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+
 volumes:
   pgdata:
