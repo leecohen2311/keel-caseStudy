@@ -16,6 +16,9 @@ import type { Service } from '../helpers/ledger-server.ts'
 //    origin, so both services need dev-only permissive CORS — an OPTIONS
 //    preflight and Access-Control-Allow-* on every response, including error
 //    responses (the browser cannot read a 401/403 demo without them).
+//    Since Phase 11 the layer is gated behind ENABLE_DEV_CORS=1 (the compose
+//    stack sets it); this suite opts in and pins the enabled-mode contract,
+//    while test/phase-11/cors_gate.test.ts pins the off-by-default behavior.
 // 2. Page wiring (static smoke): the front end exists, has one panel per
 //    feature, an identity switcher, and calls every endpoint plus
 //    SubtleCrypto for the in-browser webhook signature.
@@ -29,8 +32,8 @@ let ledgerSvc: Service
 beforeAll(async () => {
   owner = makePool('owner')
   await sweepPending(owner)
-  ingestSvc = await startIngest({ port: 3161 })
-  ledgerSvc = await startLedger({ port: 3162 })
+  ingestSvc = await startIngest({ port: 3161, extraEnv: { ENABLE_DEV_CORS: '1' } })
+  ledgerSvc = await startLedger({ port: 3162, extraEnv: { ENABLE_DEV_CORS: '1' } })
 })
 
 afterAll(async () => {
