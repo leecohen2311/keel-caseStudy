@@ -294,6 +294,27 @@ identical dedup, `FOR SHARE` period-lock, and reroute path as usage, taking the 
 signed `amount_minor` instead of rating. 409 on payload-hash mismatch is decided at
 enqueue against the queue, the same as usage.
 
+**Admin routes (Phase 6; GAP-12/14/17 pinned).**
+- Order on both routes: authenticate (401 missing/invalid token) → authorize (403 for a
+  verified token whose `admin` claim is not `true`) → validate (400) → act. The target
+  tenant comes from the body (the pinned admin exception); a `tenant` that is missing,
+  non-string, or has no `tenants` row → 400 (the FK violation is mapped, not a 500),
+  nothing written. Same 256 KiB JSON body cap → 413 as `/events`.
+- **GAP-14:** `amount_minor` must be a JSON number that is a nonzero safe integer with
+  `|amount_minor| <= 10^12` — the consumer's own bound, rejected 400 at the boundary
+  instead of accepted-then-dead-lettered. `reason` a non-empty string;
+  `idempotency_key` 1..200 UTF-8 bytes (the pinned key bound).
+- **GAP-17:** the route stamps `event_date = now()` at enqueue (mirrors `/events`'
+  absent-date default); the payload is `{ amount_minor, reason }` (numbers as JSON
+  numbers, pinned above).
+- **GAP-12:** `/periods/close` success is **200** `{ closed: true, tenant, period }`;
+  re-close and the concurrent-close loser get **409** via the `period_closures` unique
+  violation inside the close transaction (get-or-create → `FOR UPDATE` → INSERT closure
+  → flip status cache, one `READ COMMITTED` transaction). `period` must be strict
+  `YYYY-MM` (month 01-12), else 400.
+- The admin credential itself was closed in Phase 3 (claim, not row; README pre-minted
+  JWT; `seed/seed.sql` comment) — nothing further to seed in Phase 6.
+
 **Isolation.** Consumer / adjustments / close — and, since Phase 3, the ingest enqueue
 (its duplicate-key conflict path is the same block-then-reread pattern) — run at
 explicitly pinned `READ COMMITTED`, never an inherited server default. `POST /reconcile`
