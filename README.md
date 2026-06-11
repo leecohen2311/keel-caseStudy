@@ -63,7 +63,7 @@ Requires Docker and Node >= 24.
 
 Tenant scope is the verified `tenant_id` claim — never a request field. Admin
 is the `admin: true` claim (no `tenant_id`); the admin routes that ship in
-Phases 5-7 reject plain tenant tokens. All expire 2036-01-01.
+Phases 6-7 reject plain tenant tokens. All expire 2036-01-01.
 
 ```
 # tenant_alpha

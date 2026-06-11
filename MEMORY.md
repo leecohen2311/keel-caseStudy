@@ -29,9 +29,14 @@ below and the production-readiness-gate decision above).
 `9fa12a4`, README recipe `ed84fc6`; 76 tests green from a clean DB; gate **ready: true**
 (0 blocking; 4 confirmed minors accepted with pins amended — see the Phase 4 log).
 
-**Next:** **Phase 5** (read APIs), then 6 and 7, gated per phase; this session runs
-Phases 4-7 in order (gate ready + clean tree is the bar to continue), with engineer
-sign-off on the whole run at the end.
+**Phase 5 (read APIs) is built and gated:** pin commit `c58aa55`, green commit
+`fa696cb`, README `e81e1ac`, review-fix `58ea8ac` (ledger compose `JWT_SECRET`);
+85 tests green from a clean DB; gate **ready: true** with zero confirmed findings
+(see the Phase 5 log).
+
+**Next:** **Phase 6** (admin adjustments + close), then 7, gated per phase; this
+session runs Phases 4-7 in order (gate ready + clean tree is the bar to continue),
+with engineer sign-off on the whole run at the end.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -571,6 +576,36 @@ reach.
 **Accepted (logged, not hidden):** the three minors above; an unauthenticated
 oversized request reaches 413 (not 401) and can buffer up to 256 KiB, inherent to
 verify-raw-bytes-first; MEMORY status header lag closed at this gate.
+
+### Phase 5 — ledger read APIs (2026-06-10)
+
+**What happened:** TDD: the 9 Phase 5 tests were red on main (scaffold `05b0186`/
+`d4f5fbb`); re-verified red (route 404). Pins first (`c58aa55`): GAP-13 (the
+`DISABLE_CONSUMER` boot env), GAP-15 (`balance_minor` decimal string), GAP-16 (the
+statement shape, strict YYYY-MM, booked-period scoping, deterministic order, no
+volatile fields). One green commit (`fa696cb`): `src/ledger/main.ts` rewritten from
+health-stub to the real HTTP server — `/balance` derives the all-time receivable sum
+per read (never stored, INV-5), `/statement` reads the immutable header joined to the
+receivable leg scoped by `booked_period_id`; both 401 without a verified token, tenant
+always from the claim. Plain single-statement SELECTs: no caching, no new storage, no
+transactions to crash. README curls (`e81e1ac`). 85 tests green from a clean DB.
+
+**Review found (slimmed fan-out per the low-risk-phase rule: orchestrator inline
+3-lens pass, gate ran tests/compose/honesty in full):** one confirmed MAJOR — the
+ledger compose service lacked `JWT_SECRET`, so every README JWT would have 401'd in
+the one-command stack (the routes verify tokens as of this phase). Fixed as visible
+review-fix commit `58ea8ac` before the gate.
+
+**Gate (ready: true, zero confirmed findings, zero nits):** clean-DB suites 85/85;
+compose smoke proved all seven checks live (derived balance B0→B0+7 after a posted
+event; default statement byte-identical to explicit current period and across repeated
+reads, the new line present; beta token sees only beta's balance; 401 unauthenticated;
+2026-13 → 400; API balance == SUM(postings) by psql cross-check).
+
+**Accepted (logged, not hidden):** `src/healthz.ts` is now dead code (the old ledger
+stub was its only importer) — left in place pending engineer say-so on deletion; an
+admin token (no `tenant_id`) gets 401 on the tenant read routes (unpinned, no test
+constrains it).
 
 ## Open / pick up next time
 
