@@ -172,43 +172,48 @@ curl -i http://localhost:3001/webhooks/usage \
 
 `docker compose up --build` also serves a console at **http://localhost:8080**
 (static page under `ui/`, no build step). It is a pure client of the two
-APIs — every panel shows the exact request and the live response, with the
-seeded credentials prefilled. Dev conveniences, clearly not a production
-posture: permissive CORS on both services — **gated behind
-`ENABLE_DEV_CORS=1`, off by default, set only in `docker-compose.yml`** so
-the browser console works there and the permissive headers cannot ship
-anywhere by accident — and the seeded webhook secret in the page so the
-browser can sign deliveries with SubtleCrypto.
+APIs — every panel shows the exact request and the live response. The seeded
+credentials are built in as defaults: pick an identity in the **Acting as**
+switcher and go, no token pasting. Idempotency keys, delivery ids, and
+timestamps are auto-generated; each panel's optional fields sit behind a
+small **Advanced** toggle, and the connection settings (URLs, JWTs, webhook
+secret) live under **Advanced settings** at the bottom of the page. Dev
+conveniences, clearly not a production posture: permissive CORS on both
+services — **gated behind `ENABLE_DEV_CORS=1`, off by default, set only in
+`docker-compose.yml`** so the browser console works there and the permissive
+headers cannot ship anywhere by accident — and the seeded webhook secret in
+the page so the browser can sign deliveries with SubtleCrypto.
 
 Manual test checklist (one pass exercises every feature):
 
-1. **Identity.** The `ACTING AS` switcher in the top bar selects which seeded
+1. **Identity.** The `Acting as` switcher in the top bar selects which seeded
    JWT (from this README) every panel uses: `tenant_alpha`, `tenant_beta`, or
-   `admin`.
-2. **Submit usage (01).** As `tenant_alpha`, Send → `202`. Send again with the
-   same key → `202` (replay, charged once — check Balance). Change the
+   `admin`. Admin-only panels rest in a quiet locked state under a tenant
+   identity, with a deliberate "Send anyway · see the 403" demo action.
+2. **Submit usage.** As `tenant_alpha`, Send → `202`. Send again → `202`
+   (same auto-filled key: replay, charged once — check Balance). Change the
    quantity but keep the key → `409`.
-3. **Signed webhook (02).** Sign & send → `202` (the page computes the
+3. **Signed webhook.** Sign & send → `202` (the page computes the
    HMAC-SHA256 over `{timestamp}.{key_id}.{raw_body}` in-browser). "Replay
    last delivery" resends the identical bytes → `202`, but Balance/Statement
-   show exactly one charge. Edit the timestamp to something stale (>5 min
-   old) → `401`.
-4. **Balance (03).** As `tenant_alpha`, Fetch → the derived sum. Switch to
+   show exactly one charge. Under Advanced, set the timestamp to something
+   stale (>5 min old) → `401`.
+4. **Balance.** As `tenant_alpha`, Fetch → the derived sum. Switch to
    `tenant_beta` → that tenant's own balance (isolation). As `admin` → `401`
    (the admin token carries no `tenant_id`; reads are tenant-scoped).
-5. **Statement (04).** Pick the current month → the lines you just created,
+5. **Statement.** Pick the current month → the lines you just created,
    with the total. Fetch twice — byte-identical (reproducible reads).
-6. **Adjustment (05).** As `tenant_alpha` → `403` (admin only). As `admin`,
-   Send a `-250` credit → `202`; Balance drops by 250 once, even if you Send
-   the same key again.
-7. **Close period (06).** As `admin`, close a past month (e.g. last month) →
+6. **Adjustment.** As `tenant_alpha` the panel is locked — "Send anyway" →
+   `403` (admin only). Switch to admin, Send a `-250` credit → `202`;
+   Balance drops by 250 once, even if you Send the same key again.
+7. **Close period.** As `admin`, close a past month (e.g. last month) →
    `200`. Close it again → `409` (immutable close). New usage for a closed
    month rolls forward to the open period — visible in Statement.
-8. **Reconcile (07).** As `admin` → green "ALL CLEAR". (Drift is flagged with
+8. **Reconcile.** As `admin` → green "ALL CLEAR". (Drift is flagged with
    tenant/event/expected/posted rows; injecting it needs DB access — see the
    phase-7 tests.)
-9. **Authorization, negative.** As `tenant_beta`, try Close period → `403`.
-   Remove/garble a token in the config panel → `401`.
+9. **Authorization, negative.** As `tenant_beta`, "Send anyway" on Close
+   period → `403`. Remove/garble a token under Advanced settings → `401`.
 
 ## Price book
 

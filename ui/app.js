@@ -257,18 +257,41 @@ $('rec-run').onclick = () => withBusy($('rec-run'), async () => {
   report.hidden = false
 })
 
-// ---- theme + url display ---------------------------------------------------------
+// ---- identity-aware admin panels ------------------------------------------
 
+// When acting as a tenant, the admin-only panels rest in a quiet locked
+// state instead of inviting a guaranteed 403. The lock offers two ways out:
+// switch to admin, or deliberately fire the request anyway to demonstrate
+// the 403. All text lands via textContent — never markup.
+function refreshLocks() {
+  const who = identity()
+  const locked = who !== 'admin'
+  for (const panel of document.querySelectorAll('.panel--admin')) {
+    panel.toggleAttribute('data-locked', locked)
+    panel.querySelector('.panel__lock').hidden = !locked
+    for (const el of panel.querySelectorAll('.lock-ident')) el.textContent = who
+  }
+}
+$('identity').addEventListener('change', refreshLocks)
+refreshLocks()
+
+for (const btn of document.querySelectorAll('.lock-switch')) {
+  btn.onclick = () => {
+    $('identity').value = 'admin'
+    $('identity').dispatchEvent(new Event('change'))
+  }
+}
+// The deliberate authorization demo: run the panel's real send handler with
+// the current (non-admin) identity and let the live 403 render below.
+for (const btn of document.querySelectorAll('.lock-demo')) {
+  btn.onclick = () => $(btn.dataset.demo).click()
+}
+
+// ---- theme ------------------------------------------------------------------
+
+// Light is the default; dark is the ui-design.md operational console register.
 $('theme-toggle').onclick = () => {
   const html = document.documentElement
   html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark'
+  $('theme-toggle').textContent = html.dataset.theme === 'dark' ? 'Light mode' : 'Dark mode'
 }
-
-function refreshUrls() {
-  const c = cfg()
-  $('svc-urls').textContent =
-    `INGEST ${c.ingest.replace(/^https?:\/\//, '')} · LEDGER ${c.ledger.replace(/^https?:\/\//, '')}`
-}
-$('cfg-ingest').addEventListener('input', refreshUrls)
-$('cfg-ledger').addEventListener('input', refreshUrls)
-refreshUrls()

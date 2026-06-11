@@ -1,9 +1,9 @@
 <!doctype html>
-<!-- Argonav billing ledger — operational console (Phase 9).
+<!-- Argonav billing ledger — console (Phase 9, hardened Phase 11, re-skinned light).
      A pure static client of the existing Ingest/Ledger APIs: no business
      logic, no privileged path, nothing that can touch an invariant.
-     Styled against ui-design.md (operational console register, §7-10). -->
-<html lang="en" data-theme="dark">
+     Styled against ui-design.md (light editorial register, §1-6). -->
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,58 +17,35 @@
 </head>
 <body>
 
-  <!-- Classification bar: one line of situational awareness (§10) -->
-  <header class="classbar">
-    <span class="classbar__item"><span class="dot dot--active"></span>LEDGER · CONSOLE</span>
-    <span class="classbar__sep"></span>
-    <label class="classbar__item" for="identity">ACTING&nbsp;AS
+  <header class="topbar">
+    <span class="topbar__brand"><span class="dot dot--active"></span>Argonav
+      <span class="topbar__sep">·</span> Ledger Console</span>
+    <span class="topbar__spacer"></span>
+    <label class="topbar__identity" for="identity">Acting as
       <select id="identity">
         <option value="tenant_alpha" selected>tenant_alpha</option>
         <option value="tenant_beta">tenant_beta</option>
         <option value="admin">admin</option>
       </select>
     </label>
-    <span class="classbar__sep"></span>
-    <span class="classbar__item classbar__urls" id="svc-urls">INGEST :3001 · LEDGER :3002</span>
-    <span class="classbar__spacer"></span>
-    <button class="classbar__item classbar__btn" id="theme-toggle" type="button">THEME</button>
+    <button class="topbar__theme" id="theme-toggle" type="button">Dark mode</button>
   </header>
 
   <main class="wrap">
 
     <p class="lede">
-      Every panel below drives one real endpoint and shows the exact request and the live
-      response. Flip <span class="mono">ACTING AS</span> to watch authorization work — an
-      admin action as a tenant returns the 403, a tenant read with the admin token (no
-      <span class="mono">tenant_id</span> claim) returns 401.
+      Each panel drives one real endpoint and shows the exact request and the live
+      response. The seeded credentials are built in — pick an identity above and go.
+      Connection details live under <a href="#settings">Advanced settings</a>.
     </p>
-
-    <details class="config">
-      <summary>Connection &amp; seeded credentials (dev-only, prefilled from README.md)</summary>
-      <div class="config__grid">
-        <label>Ingest base URL <input id="cfg-ingest" value="http://localhost:3001" /></label>
-        <label>Ledger base URL <input id="cfg-ledger" value="http://localhost:3002" /></label>
-        <label>tenant_alpha JWT <textarea id="cfg-token-tenant_alpha" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYWxwaGEiLCJpYXQiOjE3ODExMzEzMzIsImV4cCI6MjA4Mjc1ODQwMH0.8SQyVU7HbmNa-5dRQdFYwrChit5pyy-f9kqiMETAMIY</textarea></label>
-        <label>tenant_beta JWT <textarea id="cfg-token-tenant_beta" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYmV0YSIsImlhdCI6MTc4MTEzMTMzMiwiZXhwIjoyMDgyNzU4NDAwfQ.2mCsUzJ7dkRC0cG3kaGyjnUSRrWepaqMjXYKUG2Xm6Y</textarea></label>
-        <label>admin JWT <textarea id="cfg-token-admin" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbiI6dHJ1ZSwiaWF0IjoxNzgxMTMxMzMyLCJleHAiOjIwODI3NTg0MDB9.FZ6OTAE3EjyXl-EPy-lB52EL356UVZ0eW3haUeKaj-8</textarea></label>
-        <label>Webhook key id <input id="cfg-wh-key" value="whk_alpha_meterco" /></label>
-        <label>Webhook secret <input id="cfg-wh-secret" value="whsec_dev_alpha_meterco_1" />
-          <span class="hint">The secret lives in the page so the console can sign deliveries
-          in-browser (SubtleCrypto) — a local test convenience only; a real provider never
-          ships its secret to a client.</span></label>
-      </div>
-    </details>
 
     <div class="grid">
 
-      <!-- 01 · Submit usage -->
+      <!-- Submit usage -->
       <section class="panel" id="panel-events">
         <header class="panel__head">
-          <span class="panel__num">01</span>
-          <div>
-            <h2 class="panel__title">Submit usage</h2>
-            <p class="panel__sub mono">POST /events · tenant token</p>
-          </div>
+          <h2 class="panel__title">Submit usage</h2>
+          <p class="panel__sub mono">POST /events · tenant token</p>
         </header>
         <form class="fields" id="form-events">
           <label>Metric
@@ -78,39 +55,35 @@
             </select>
           </label>
           <label>Quantity <input id="ev-quantity" type="number" value="100" min="1" /></label>
-          <label>event_date <span class="hint">optional, ISO with offset</span>
-            <input id="ev-date" placeholder="2026-06-10T12:00:00Z" /></label>
-          <label>idempotency_key
-            <span class="keyrow">
-              <input id="ev-key" />
-              <button type="button" class="btn btn--ghost" id="ev-newkey" title="generate a fresh key">↻ new key</button>
-            </span>
-          </label>
         </form>
+        <details class="adv">
+          <summary>Advanced</summary>
+          <div class="fields">
+            <label>event_date <span class="hint">optional, ISO with offset; blank = now</span>
+              <input id="ev-date" placeholder="2026-06-10T12:00:00Z" /></label>
+            <label>idempotency_key <span class="hint">auto-generated</span>
+              <span class="keyrow">
+                <input id="ev-key" />
+                <button type="button" class="btn btn--ghost" id="ev-newkey" title="generate a fresh key">↻ new key</button>
+              </span>
+            </label>
+          </div>
+        </details>
         <div class="actions">
           <button class="btn" id="ev-send" type="button">Send</button>
-          <span class="hint">Send twice with the same key → replayed 202. Change the
+          <span class="hint">Send twice → replayed 202, charged once. Change the
             quantity but keep the key → 409.</span>
         </div>
         <div class="result" id="result-events" hidden></div>
       </section>
 
-      <!-- 02 · Signed webhook -->
+      <!-- Signed webhook -->
       <section class="panel" id="panel-webhook">
         <header class="panel__head">
-          <span class="panel__num">02</span>
-          <div>
-            <h2 class="panel__title">Signed webhook</h2>
-            <p class="panel__sub mono">POST /webhooks/usage · HMAC-SHA256, no JWT</p>
-          </div>
+          <h2 class="panel__title">Signed webhook</h2>
+          <p class="panel__sub mono">POST /webhooks/usage · HMAC-SHA256, no JWT</p>
         </header>
         <form class="fields" id="form-webhook">
-          <label>Body event_id <span class="hint">the delivery id, inside the signed body</span>
-            <span class="keyrow">
-              <input id="wh-eventid" />
-              <button type="button" class="btn btn--ghost" id="wh-newid" title="generate a fresh delivery id">↻ new id</button>
-            </span>
-          </label>
           <label>Metric
             <select id="wh-metric">
               <option value="api_call" selected>api_call · rate 1</option>
@@ -118,9 +91,20 @@
             </select>
           </label>
           <label>Quantity <input id="wh-quantity" type="number" value="5" min="1" /></label>
-          <label>Timestamp <span class="hint">unix seconds; blank = now (±300s window)</span>
-            <input id="wh-ts" placeholder="auto" /></label>
         </form>
+        <details class="adv">
+          <summary>Advanced</summary>
+          <div class="fields">
+            <label>Body event_id <span class="hint">the delivery id, inside the signed body; auto-generated</span>
+              <span class="keyrow">
+                <input id="wh-eventid" />
+                <button type="button" class="btn btn--ghost" id="wh-newid" title="generate a fresh delivery id">↻ new id</button>
+              </span>
+            </label>
+            <label>Timestamp <span class="hint">unix seconds; blank = now (±300s window)</span>
+              <input id="wh-ts" placeholder="auto" /></label>
+          </div>
+        </details>
         <div class="actions">
           <button class="btn" id="wh-send" type="button">Sign &amp; send</button>
           <button class="btn btn--ghost" id="wh-replay" type="button" disabled>Replay last delivery</button>
@@ -130,14 +114,11 @@
         <div class="result" id="result-webhook" hidden></div>
       </section>
 
-      <!-- 03 · Balance -->
+      <!-- Balance -->
       <section class="panel" id="panel-balance">
         <header class="panel__head">
-          <span class="panel__num">03</span>
-          <div>
-            <h2 class="panel__title">Balance</h2>
-            <p class="panel__sub mono">GET /balance · tenant token · derived per read</p>
-          </div>
+          <h2 class="panel__title">Balance</h2>
+          <p class="panel__sub mono">GET /balance · tenant token · derived per read</p>
         </header>
         <div class="readout" id="balance-readout" hidden>
           <span class="readout__label mono">BALANCE · MINOR UNITS</span>
@@ -150,14 +131,11 @@
         <div class="result" id="result-balance" hidden></div>
       </section>
 
-      <!-- 04 · Statement -->
+      <!-- Statement -->
       <section class="panel" id="panel-statement">
         <header class="panel__head">
-          <span class="panel__num">04</span>
-          <div>
-            <h2 class="panel__title">Statement</h2>
-            <p class="panel__sub mono">GET /statement?period=YYYY-MM · tenant token</p>
-          </div>
+          <h2 class="panel__title">Statement</h2>
+          <p class="panel__sub mono">GET /statement?period=YYYY-MM · tenant token</p>
         </header>
         <form class="fields" id="form-statement">
           <label>Period <input id="st-period" type="month" /></label>
@@ -169,15 +147,20 @@
         <div class="result" id="result-statement" hidden></div>
       </section>
 
-      <!-- 05 · Adjustment -->
-      <section class="panel" id="panel-adjustments">
+      <!-- Adjustment -->
+      <section class="panel panel--admin" id="panel-adjustments">
         <header class="panel__head">
-          <span class="panel__num">05</span>
-          <div>
-            <h2 class="panel__title">Adjustment</h2>
-            <p class="panel__sub mono">POST /adjustments · admin only</p>
-          </div>
+          <h2 class="panel__title">Adjustment</h2>
+          <p class="panel__sub mono">POST /adjustments · admin only</p>
         </header>
+        <div class="panel__lock" hidden>
+          <p class="panel__lock-note">Admin only — you're acting as
+            <strong class="lock-ident">tenant_alpha</strong>.</p>
+          <div class="actions">
+            <button type="button" class="btn btn--ghost lock-switch">Switch to admin</button>
+            <button type="button" class="btn btn--link lock-demo" data-demo="adj-send">Send anyway · see the 403</button>
+          </div>
+        </div>
         <form class="fields" id="form-adjustments">
           <label>Tenant
             <select id="adj-tenant">
@@ -188,31 +171,40 @@
           <label>amount_minor <span class="hint">negative = credit</span>
             <input id="adj-amount" type="number" value="-250" /></label>
           <label>Reason <input id="adj-reason" value="goodwill credit" /></label>
-          <label>idempotency_key
-            <span class="keyrow">
-              <input id="adj-key" />
-              <button type="button" class="btn btn--ghost" id="adj-newkey" title="generate a fresh key">↻ new key</button>
-            </span>
-          </label>
         </form>
+        <details class="adv">
+          <summary>Advanced</summary>
+          <div class="fields">
+            <label>idempotency_key <span class="hint">auto-generated</span>
+              <span class="keyrow">
+                <input id="adj-key" />
+                <button type="button" class="btn btn--ghost" id="adj-newkey" title="generate a fresh key">↻ new key</button>
+              </span>
+            </label>
+          </div>
+        </details>
         <div class="actions">
           <button class="btn" id="adj-send" type="button">Send</button>
-          <span class="hint">As a tenant identity this is the 403 demo. As admin it
-            enqueues (202) and the consumer posts it through the same crash-safe path
-            as usage.</span>
+          <span class="hint">Enqueues (202); the consumer posts it through the same
+            crash-safe path as usage, charged exactly once per key.</span>
         </div>
         <div class="result" id="result-adjustments" hidden></div>
       </section>
 
-      <!-- 06 · Close period -->
-      <section class="panel" id="panel-close">
+      <!-- Close period -->
+      <section class="panel panel--admin" id="panel-close">
         <header class="panel__head">
-          <span class="panel__num">06</span>
-          <div>
-            <h2 class="panel__title">Close period</h2>
-            <p class="panel__sub mono">POST /periods/close · admin only · one winner</p>
-          </div>
+          <h2 class="panel__title">Close period</h2>
+          <p class="panel__sub mono">POST /periods/close · admin only · one winner</p>
         </header>
+        <div class="panel__lock" hidden>
+          <p class="panel__lock-note">Admin only — you're acting as
+            <strong class="lock-ident">tenant_alpha</strong>.</p>
+          <div class="actions">
+            <button type="button" class="btn btn--ghost lock-switch">Switch to admin</button>
+            <button type="button" class="btn btn--link lock-demo" data-demo="cl-send">Send anyway · see the 403</button>
+          </div>
+        </div>
         <form class="fields" id="form-close">
           <label>Tenant
             <select id="cl-tenant">
@@ -230,15 +222,20 @@
         <div class="result" id="result-close" hidden></div>
       </section>
 
-      <!-- 07 · Reconcile -->
-      <section class="panel panel--wide" id="panel-reconcile">
+      <!-- Reconcile -->
+      <section class="panel panel--admin panel--wide" id="panel-reconcile">
         <header class="panel__head">
-          <span class="panel__num">07</span>
-          <div>
-            <h2 class="panel__title">Reconcile</h2>
-            <p class="panel__sub mono">POST /reconcile · admin only · independent re-derivation</p>
-          </div>
+          <h2 class="panel__title">Reconcile</h2>
+          <p class="panel__sub mono">POST /reconcile · admin only · independent re-derivation</p>
         </header>
+        <div class="panel__lock" hidden>
+          <p class="panel__lock-note">Admin only — you're acting as
+            <strong class="lock-ident">tenant_alpha</strong>.</p>
+          <div class="actions">
+            <button type="button" class="btn btn--ghost lock-switch">Switch to admin</button>
+            <button type="button" class="btn btn--link lock-demo" data-demo="rec-run">Run anyway · see the 403</button>
+          </div>
+        </div>
         <div class="actions">
           <button class="btn" id="rec-run" type="button">Run reconcile</button>
           <span class="hint">Re-derives every tenant from the queue's done rows and flags
@@ -249,10 +246,26 @@
       </section>
 
     </div>
+
+    <details class="config" id="settings">
+      <summary>Advanced settings — connection &amp; seeded credentials (dev-only, prefilled from README.md)</summary>
+      <div class="config__grid">
+        <label>Ingest base URL <input id="cfg-ingest" value="http://localhost:3001" /></label>
+        <label>Ledger base URL <input id="cfg-ledger" value="http://localhost:3002" /></label>
+        <label>tenant_alpha JWT <textarea id="cfg-token-tenant_alpha" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYWxwaGEiLCJpYXQiOjE3ODExMzEzMzIsImV4cCI6MjA4Mjc1ODQwMH0.8SQyVU7HbmNa-5dRQdFYwrChit5pyy-f9kqiMETAMIY</textarea></label>
+        <label>tenant_beta JWT <textarea id="cfg-token-tenant_beta" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiJ0ZW5hbnRfYmV0YSIsImlhdCI6MTc4MTEzMTMzMiwiZXhwIjoyMDgyNzU4NDAwfQ.2mCsUzJ7dkRC0cG3kaGyjnUSRrWepaqMjXYKUG2Xm6Y</textarea></label>
+        <label>admin JWT <textarea id="cfg-token-admin" rows="2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbiI6dHJ1ZSwiaWF0IjoxNzgxMTMxMzMyLCJleHAiOjIwODI3NTg0MDB9.FZ6OTAE3EjyXl-EPy-lB52EL356UVZ0eW3haUeKaj-8</textarea></label>
+        <label>Webhook key id <input id="cfg-wh-key" value="whk_alpha_meterco" /></label>
+        <label>Webhook secret <input id="cfg-wh-secret" value="whsec_dev_alpha_meterco_1" />
+          <span class="hint">The secret lives in the page so the console can sign deliveries
+          in-browser (SubtleCrypto) — a local test convenience only; a real provider never
+          ships its secret to a client.</span></label>
+      </div>
+    </details>
   </main>
 
-  <footer class="foot mono">
-    ARGONAV CASE STUDY · DEV CONSOLE — seeded dev credentials, permissive CORS, in-browser
+  <footer class="foot">
+    Argonav case study · dev console — seeded dev credentials, permissive CORS, in-browser
     webhook signing: local test conveniences, none of this is a production posture.
   </footer>
 
