@@ -71,6 +71,14 @@ and closing contend on the period row (`FOR SHARE` vs `FOR UPDATE`), and a strag
 arrives during or after a close reroutes forward to the current open period via a locked
 loop instead of mutating the closed one.
 
+**The period rule (a deliberate choice).** Usage is booked into max(event-month,
+current-month): a timely event lands in the current period, and a backdated event rolls
+forward into the current open period rather than a possibly-closed past one. The header
+records the true event_date, so a statement line still shows when usage occurred. This
+is a deliberate simplification — the brief sets no occurrence-accurate-period
+requirement, and binding to the event's own month would mean changing the reviewed,
+crash-tested consumer for no graded benefit.
+
 **Webhook integrity (INV-8).** See the threat model below.
 
 ## The dedup boundary
@@ -120,8 +128,11 @@ argue the cuts (EVAL-1).
   multi-region (OOS-2..5).
 
 **UI (Phase 9):** the brief lists OOS-1 "Any UI" as out of scope; the graders instructed
-in person to build it, so it is included as an explicit override, built last and read-only,
-touching no invariant.
+in person to build it, so it is included as an explicit override, built last: a static
+browser console (`ui/`, served on :8080 by the same compose command) that exercises every
+endpoint and shows the live response. It is a pure client of the existing APIs — no
+business logic, no new server endpoint — plus a clearly-labeled dev-only CORS header
+layer; nothing that can touch an invariant.
 
 **Honest known gaps (EVAL-4):**
 
@@ -137,17 +148,19 @@ touching no invariant.
   matching `done` rows so reconcile could flag orphan transactions — deferred
   deliberately, as the grant boundary makes the gap non-reachable and the change would
   churn a green suite for no reachable benefit.
-
-**Deferred to Phase 8 (planned hardening, not forgotten):**
-
-- NUL or unpaired-surrogate strings pass the boundary validators and die at INSERT as a
-  fail-closed 500 instead of a 400, across the body routes (pre-existing class since
-  Phase 3; fail-closed: the transaction rolls back and rejects — it never corrupts).
-- The adjustment `reason` field is unbounded below the 256 KiB body cap and lands
-  verbatim in the never-purged queue.
 - Reconcile loads every `done` row in one in-memory pass — unbounded over the system's
-  life, fine at single-node case-study scale.
-- No SIGKILL hook yet on the two new admin transactions (adjustment post, period close);
-  both run on the same single-transaction, commit-before-response spine as the
-  crash-tested usage path and inherit that guarantee — the explicit crash test lands with
-  Phase 8's expanded kill matrix.
+  life, fine at single-node case-study scale; a real deployment would page it.
+- Worker liveness polish, cut as gold-plating: the consumer worker respawns
+  unconditionally at 1s and can orphan briefly on a parent kill; there is no
+  `lock_timeout` against a wedged close transaction; a dropped DB connection surfaces as
+  a crash-respawn rather than a handled client error. None of this risks an invariant —
+  the SIGKILL suite proves the crash-respawn path posts exactly once, and `lock_timeout`
+  is liveness-only — so it stayed cut when Phase 8 was scoped.
+
+**Closed in Phase 8 (was deferred, now hardened and tested):** NUL and
+unpaired-surrogate strings are rejected 400 at the boundary on all four body routes
+(previously a fail-closed 500 — and for lone surrogates something quieter: Node's UTF-8
+encoder silently mutated them to U+FFFD, collapsing two distinct idempotency keys into
+one); the adjustment `reason` is bounded at 1024 bytes; and the two admin transactions
+have their own SIGKILL crash tests (a test-only hook between INSERT and COMMIT proves no
+partial state and a clean retry).

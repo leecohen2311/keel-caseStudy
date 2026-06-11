@@ -19,6 +19,15 @@ them. The build order puts the airtight core (table-backed queue, dedup, balance
 double-entry) before any API, and no phase is called done while an invariant is
 knowingly broken.
 
+From Phase 3 on I mechanized the review step into a per-phase gate that runs right
+after each implementation commit: the full suite from a clean database, a cold boot of
+the one-command compose stack smoke-tested with the README credentials, a three-lens
+adversarial review of the phase diff (contract fidelity, security, crash and
+transaction boundaries) where a skeptic agent tries to refute every non-trivial
+finding, and a docs-honesty checklist. Fixes land as their own visible commits and the
+gate re-runs until it passes. The point was to catch defects while the diff was one
+phase wide and cheap to fix — which it did, repeatedly (below).
+
 ## What I delegated versus what I owned
 
 I delegated implementation: route handlers, the migration runner, the HMAC,
@@ -67,6 +76,36 @@ rejected it in favor of enforcement by construction: always insert the balanced 
 in one statement, and prove it on demand with a single query
 (`GROUP BY txn_id HAVING SUM(amount_minor) <> 0` must return zero rows). Simpler to
 explain, and the check is the proof. Less clever, more defensible.
+
+The catches kept coming during the build, not just at design time. A sample, one per
+phase, from the per-phase gates:
+
+- **Phase 3 (tenant API).** The review proved two majors live before the code shipped:
+  `event_date` was validated with the JavaScript date parser but stored through the
+  Postgres parser, so an input both accepted differently turned the pinned 400 into a
+  500; and a bare `BEGIN` inherited the server's default isolation level, silently
+  regressing the exact Phase 2 fix the locking protocol depends on. Both reproduced
+  against the live database, then fixed.
+- **Phase 4 (webhook).** The reviewer flagged pre-authentication buffering of the raw
+  body as a flaw; the skeptic refuted it — the signature covers the raw bytes, so the
+  read must precede verification. The agents arguing with each other saved me from
+  "fixing" correct code. The real findings were pin-level (a response-leak overclaim,
+  a timestamp-parser leniency), and we amended the pins instead of churning the code.
+- **Phase 5 (reads).** The gate's compose smoke — not the test suite — caught that the
+  ledger container was missing `JWT_SECRET`, which would have 401'd every credential in
+  the README's one-command demo. Tests all green, product broken: exactly the class a
+  boot-and-poke gate exists for.
+- **Phase 6 (admin).** The review surfaced that a token carrying both `admin: true` and
+  a `tenant_id` would pass both route classes — not exploitable (only the secret holder
+  can mint one), but an undocumented contract surface. Pinned rather than patched.
+- **Phase 8 (hardening).** The failing-test run was itself diagnostic: a NUL byte died
+  as the documented fail-closed 500, but an unpaired surrogate was quietly worse —
+  Node's UTF-8 encoder mutates it to U+FFFD on the wire, so two distinct idempotency
+  keys collapsed into one stored key and the request 202'd. The boundary gate now
+  rejects both with a 400.
+- **Phase 9 (console).** The review pass caught formatted numeric strings reaching
+  `innerHTML` unescaped in the statement and reconcile tables. Server-generated values
+  by contract, but the console should not trust any wire value into markup.
 
 The review cut both ways, to be fair. The co-architect's first consumer sketch was
 also broken in a way I had it fix: it tried to insert the posting first and then
@@ -140,13 +179,25 @@ honest process.
   turns the same lock contention into serialization errors. Reconcile deliberately uses
   `REPEATABLE READ` for the opposite reason: a stable snapshot that avoids false
   positives.
+- An unpaired UTF-16 surrogate in a string survives every `typeof` check and is then
+  silently rewritten to U+FFFD by Node's UTF-8 encoder on the way to Postgres — so two
+  distinct idempotency keys can become one stored key. I only learned this from the
+  Phase 8 failing-test run, which is the argument for running the red tests instead of
+  assuming what they will say.
+- Browser `SubtleCrypto` can produce the webhook's HMAC-SHA256 signature in-page (the
+  console signs deliveries client-side), but only in a secure context — localhost
+  qualifies, which is the one place a dev console should run anyway.
 
 ## What I cut, and the honest gaps
 
 Cut as out of scope and argued in DESIGN.md: tiered price book, statement pagination,
-multiple channels, multi-currency, plus the brief's own exclusions (payment processor,
-SSO/signup, HA, multi-region). The UI is built only because the graders asked for it in
-person, overriding the brief's OOS-1; it is last and cut first.
+multiple channels, multi-currency, worker liveness polish (supervision, lock_timeout,
+a handled pg error path — liveness-only; the SIGKILL suite proves the crash-respawn
+path safe), plus the brief's own exclusions (payment processor, SSO/signup, HA,
+multi-region). The UI was built — last, and only because the graders asked for it in
+person, overriding the brief's OOS-1. It stayed a pure client of the existing APIs: a
+static console that exercises every endpoint and shows the live response, with nothing
+in it that can touch an invariant.
 
 Known gap I am not hiding: a process-crashing poison event is not durably dead-lettered,
 because the attempt counter cannot live in the transaction that rolls back on the crash.

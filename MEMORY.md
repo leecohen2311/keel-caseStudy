@@ -5,9 +5,10 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-9 complete and individually gated ready: true;
-full suite 133/133 green from a clean DB. Next: Phase 10 (docs finalization) per
-PLAN.md)._
+_Last updated: 2026-06-10 (ALL PHASES 0-10 complete; code phases individually gated
+ready: true; full suite 133/133 green from a clean DB; graded docs finalized. The
+build is delivery-ready on local main — NOT pushed; the final push is the engineer's
+call)._
 
 ## Current status
 
@@ -61,7 +62,16 @@ plus 2 minors; see the Phase 8 log).
 clean DB**; gate **ready: true** with zero confirmed code findings (2 docs-only
 readiness minors fixed at the gate; see the Phase 9 log).
 
-**Next:** **Phase 10** (docs finalization and delivery prep, per PLAN.md). Not started.
+**Phase 10 (docs finalization) is done:** DESIGN.md carries the period-rule paragraph,
+the updated cut/known-gaps sections (Phase 8 closures vs. what stays: REC-2 orphan
+non-check, unbounded reconcile scan, the cut liveness trio), and the refreshed UI
+override note, at ~3 pages (DEL-4). NOTES.md folds in the per-phase living log
+(Phases 3-9 catches, the refuted Phase 4 finding, the Phase 8 U+FFFD lesson) and all
+DEL-5 elements. README verified accurate by the Phase 9 gate (one-command boot incl.
+the console, 133-test green suite, credentials, curls).
+
+**Next:** engineer sign-off on the Phase 8-10 run, then the engineer pushes. Nothing
+is pushed; local main only.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -854,6 +864,22 @@ new CORS wire contract unpinned in MEMORY.
 
 **Solved (this gate-fix commit):** README counts/coverage refreshed; dev-only
 CORS + console pinned block added; Phase 9 log + status refresh.
+
+### Phase 10 — docs finalization and delivery prep (2026-06-10)
+
+**What happened:** docs-only, no gate (not a code phase; the per-phase gates covered
+8 and 9 this session). DESIGN.md: added the engineer-supplied period-rule paragraph
+(max(event-month, current-month) as a deliberate, defended simplification); rewrote
+the deferred section into "closed in Phase 8" (NUL/surrogate 400s, reason bound, admin
+SIGKILL tests) versus what stays (REC-2 orphan non-check, unbounded reconcile scan,
+the cut liveness trio now argued in the cut list); refreshed the OOS-1 override note
+to describe the real console. Word count ~1.55k ≈ 3 pages. NOTES.md: per-phase
+living-log section (one catch per phase, including the Phase 4 finding the skeptic
+refuted and the Phase 5 compose-smoke catch), gate mechanization described under "How
+I worked", two new had-to-learn items (the U+FFFD encoder collision, SubtleCrypto
+secure-context), UI cut-note corrected to built-as-pure-client. README left as
+verified by the Phase 9 gate. Final state: full suite green from a clean DB, tree
+clean, TDD-visible unsquashed history. Not pushed.
 
 ## Open / pick up next time
 
