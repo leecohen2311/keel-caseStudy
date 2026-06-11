@@ -259,6 +259,25 @@ body {
   border-bottom: 1px solid var(--rule);
 }
 .result__time { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-dim); }
+.result__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.result__pulse {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--int-active);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+.btn--busy { opacity: 0.55; cursor: progress; }
 .result__body {
   margin: 0;
   padding: 10px 12px;

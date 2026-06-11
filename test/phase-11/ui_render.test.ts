@@ -1,17 +1,24 @@
 import { describe, test, expect } from 'vitest'
-import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import vm from 'node:vm'
 
 // Phase 11 — the console's render layer must be XSS-inert. Every HTML
 // fragment the console builds from wire data goes through the pure builders
-// in ui/render.js (a classic browser script with a CommonJS guard so this
-// suite can require it — still no build step). These tests feed API
-// responses whose every field carries hostile markup and assert the output
-// is inert: server values must never reach the page as live HTML, no matter
-// what an endpoint (or a tampered response) returns.
+// in ui/render.js (a classic browser script, no build step), which this
+// suite evaluates in a vm context exactly the way a browser would — its
+// top-level functions land on the (contextified) global. These tests feed
+// API responses whose every field carries hostile markup and assert the
+// output is inert: server values must never reach the page as live HTML,
+// no matter what an endpoint (or a tampered response) returns.
 
-const require = createRequire(import.meta.url)
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const R = require('../../ui/render.js')
+const ctx: Record<string, CallableFunction> = {}
+vm.createContext(ctx)
+vm.runInContext(
+  readFileSync(new URL('../../ui/render.js', import.meta.url), 'utf8'),
+  ctx,
+  { filename: 'ui/render.js' }
+)
+const R = ctx
 
 const SCRIPT = '<script>alert(1)</script>'
 const IMG = '<img src=x onerror=alert(1)>'
