@@ -214,9 +214,9 @@ $('st-fetch').onclick = async () => {
       <td class="id" title="${escapeHtml(l.txn_id)}">${escapeHtml(String(l.txn_id))}</td>
       <td>${escapeHtml(l.kind)}</td>
       <td>${l.metric === null ? '—' : escapeHtml(l.metric)}</td>
-      <td class="num">${l.quantity === null ? '—' : fmtMinor(l.quantity)}</td>
+      <td class="num">${l.quantity === null ? '—' : escapeHtml(fmtMinor(l.quantity))}</td>
       <td class="id">${escapeHtml(String(l.event_date))}</td>
-      <td class="num">${fmtMinor(l.amount_minor)}</td>
+      <td class="num">${escapeHtml(fmtMinor(l.amount_minor))}</td>
     </tr>`).join('')
   tbl.innerHTML = `
     <table>
@@ -227,7 +227,7 @@ $('st-fetch').onclick = async () => {
       <tbody>${rows.length ? rows : '<tr><td colspan="6" class="id">no lines in this period</td></tr>'}</tbody>
       <tfoot><tr>
         <td colspan="5">TOTAL · ${escapeHtml(r.body.period)}</td>
-        <td class="num">${fmtMinor(r.body.total_minor)}</td>
+        <td class="num">${escapeHtml(fmtMinor(r.body.total_minor))}</td>
       </tr></tfoot>
     </table>`
   tbl.hidden = false
@@ -291,8 +291,8 @@ $('rec-run').onclick = async () => {
         <td><span class="badge badge--danger">▲ ${escapeHtml(d.type)}</span></td>
         <td class="id">${escapeHtml(d.tenant_id ?? '—')}</td>
         <td class="id">${escapeHtml(d.event_id ?? d.txn_id ?? '—')}</td>
-        <td class="num">${d.expected !== undefined ? fmtMinor(d.expected) : '—'}</td>
-        <td class="num">${d.posted !== undefined ? fmtMinor(d.posted) : '—'}</td>
+        <td class="num">${d.expected !== undefined ? escapeHtml(fmtMinor(d.expected)) : '—'}</td>
+        <td class="num">${d.posted !== undefined ? escapeHtml(fmtMinor(d.posted)) : '—'}</td>
         <td class="id">${escapeHtml(d.detail ?? '')}</td>
       </tr>`).join('')
     report.innerHTML = `
