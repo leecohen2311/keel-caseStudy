@@ -340,6 +340,15 @@ Ingest service carries a test-only `INGEST_CRASH_POINT` env hook mirroring the c
 
 ## Reconciliation design (REC-1..3)
 
+**GAP-18 pinned (Phase 7):** `POST /reconcile` returns **200** with
+`{ ok: boolean, discrepancies: [...] }` — 200 even when flagging (a diagnostic report,
+not an error); `ok === true` iff `discrepancies` is empty; each discrepancy carries
+`{ type, tenant_id, ... }` with enough (event_id / txn_id, expected vs posted) to
+locate it. Auth is the same admin gate as Phase 6 (401/403). The transaction is
+`REPEATABLE READ` **READ ONLY**. A header without a queue row is NOT flagged — the
+queue's `done` rows drive the re-derivation (they are the independent record); the
+global zero-sum and leg-count checks still cover every header.
+
 `POST /reconcile` (admin), one `REPEATABLE READ` transaction. Per tenant: re-rate each
 `done` usage queue row through the price book and compare to the posted usage amount;
 flag a `done` row with no transaction header (catches a deleted balanced pair); check
