@@ -5,8 +5,9 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-4 complete; Phase 4 gate ready: true; Phases 5-7
-being built in order this session under the engineer's standing instruction)._
+_Last updated: 2026-06-10 (Phases 0-7 complete and individually gated ready: true;
+full suite 115/115 green; awaiting engineer sign-off on the Phase 4-7 run before
+Phase 8)._
 
 ## Current status
 
@@ -38,9 +39,13 @@ below and the production-readiness-gate decision above).
 green commit `e6cb758`, README `262d184`; 106 tests green from a clean DB; gate
 **ready: true** (0 blocking; 3 confirmed minors accepted — see the Phase 6 log).
 
-**Next:** **Phase 7** (reconcile), gated; this session runs Phases 4-7 in order (gate
-ready + clean tree is the bar to continue), with engineer sign-off on the whole run at
-the end.
+**Phase 7 (reconcile) is built and gated:** pin commit `044c29d`, green commit
+`d50ad44`, README `fcc8a44`; **the full suite is green — 115/115 from a clean DB**
+(the TDD scaffold has no remaining red); gate **ready: true** (0 blocking; 2 distinct
+confirmed minors accepted — see the Phase 7 log).
+
+**Next:** engineer sign-off on the Phase 4-7 run (each phase's boundaries and accepted
+findings are in the Phase log), then **Phase 8** (adversarial hardening, per PLAN.md).
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -687,6 +692,43 @@ never-purged queue (same class as the bounded key, much smaller exposure; Phase 
 No SIGKILL hook covers the two new admin transactions yet — structurally identical to
 the proven ingest enqueue (single transaction, commit-before-response, unique-key
 recovery), and the crash matrix expansion is already PLAN Phase 8 scope.
+
+### Phase 7 — reconciliation (2026-06-10)
+
+**What happened:** TDD: the 9 Phase 7 tests were red on main (scaffold `f217abb`/
+`5246ae0`); re-verified red (route 404). Pin first (`044c29d`): GAP-18 — 200 with
+`{ ok, discrepancies }` even when flagging, REPEATABLE READ **READ ONLY**, and the
+deliberate non-check (a header without a queue row is not flagged). One green commit
+(`d50ad44`): `handleReconcile` in `src/ledger/main.ts` — one read-only snapshot
+transaction; every `done` queue row LEFT JOINed to its header and receivable leg
+(missing header = deleted-pair flag; usage re-rated through the price book **from the
+queue payload, never the header**; adjustments compared to the enqueued
+`amount_minor`; unratable payloads flagged per-row, never a 500); plus the global
+exactly-two-postings / zero-net check over every transaction. README (`fcc8a44`):
+`npm test` is now fully green at 115 — the red-scaffold caveat is gone. **The whole
+build is green: 115/115 from a clean DB.**
+
+**Gate (ready: true, 0 blocking):** clean-DB suites 115/115; compose smoke proved
+REC-1..3 live — persisted-volume baseline reconciled clean; symmetric-scale tamper
+(zero-sum preserved) flagged with the exact tenant/event/expected/posted, 200 while
+flagging; tamper reverted → clean again; reconcile hammered 4× during a live consumer
+drain → zero false positives, then the new charge reconciled clean. Full 3-lens review
++ skeptic: 2 distinct confirmed minors, both accepted.
+
+**Accepted (logged, not hidden):**
+1. **The pinned non-check is a real REC-2 narrowing — surfaced for engineer
+   sign-off:** a forged *balanced* transaction with NO queue row (requires
+   `app_ledger`-level INSERT on transactions+postings — `app_ingest` cannot) passes
+   reconcile silently: query 1 walks only `done` queue rows, query 2 only checks
+   legs=2/net=0. Pinned with rationale (Phase 5/6 seeds legitimately write queue-less
+   headers; flagging would false-positive), and structurally mitigated by the grant
+   split, but the reviewers note the rationale is a test-infrastructure constraint,
+   not a fundamental one — revisit in Phase 8 if seeds are taught to write matching
+   done rows.
+2. Reconcile loads every `done` row (payloads included) into one in-memory pass —
+   unbounded over the system's life since done rows are never purged. Fine at
+   case-study scale (300-row drain reconciles in <1 s); a real deployment would page
+   it. Logged as a known cut.
 
 ## Open / pick up next time
 
