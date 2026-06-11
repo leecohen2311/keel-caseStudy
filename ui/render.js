@@ -83,6 +83,47 @@ function statementTableHtml(body) {
     </table>`
 }
 
+// The Ledger view register. `body` is the parsed GET /statement response;
+// columns are the activity ledger's (no txn_id — the Statement panel keeps
+// the full wire shape), with the period total in the footer.
+function ledgerTableHtml(body) {
+  const rows = body.lines.map((l) => `
+    <tr>
+      <td class="id">${escapeHtml(String(l.event_date))}</td>
+      <td>${escapeHtml(l.kind)}</td>
+      <td>${l.metric === null ? '—' : escapeHtml(l.metric)}</td>
+      <td class="num">${l.quantity === null ? '—' : escapeHtml(fmtMinor(l.quantity))}</td>
+      <td class="num">${escapeHtml(fmtMinor(l.amount_minor))}</td>
+    </tr>`).join('')
+  return `
+    <table>
+      <thead><tr>
+        <th>event date</th><th>kind</th><th>metric</th>
+        <th class="num">qty</th><th class="num">amount</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td colspan="4">TOTAL · ${escapeHtml(body.period)}</td>
+        <td class="num">${escapeHtml(fmtMinor(body.total_minor))}</td>
+      </tr></tfoot>
+    </table>`
+}
+
+// The Ledger view's empty state for a period with no booked lines.
+function ledgerEmptyHtml(period) {
+  return `<div class="ledger-empty">no activity this period · ${escapeHtml(period)}</div>`
+}
+
+// The Ledger view's error state (non-200 statement read, network failure).
+function ledgerErrorHtml({ status, bodyText }) {
+  const badge = status === 0 ? '✕ UNREACHABLE' : '● ' + status
+  return `
+    <div class="ledger-error">
+      <span class="badge ${badgeClass(status)}">${escapeHtml(badge)}</span>
+      <pre class="ledger-error__body">${escapeHtml(bodyText)}</pre>
+    </div>`
+}
+
 // The reconcile report. `body` is the parsed POST /reconcile response.
 function reconReportHtml(body) {
   if (body.ok) {

@@ -20,6 +20,10 @@
   <header class="topbar">
     <span class="topbar__brand"><span class="dot dot--active"></span>Argonav
       <span class="topbar__sep">·</span> Ledger Console</span>
+    <nav class="topbar__views" aria-label="View">
+      <button class="viewbtn viewbtn--on" id="view-btn-console" type="button" aria-pressed="true">Console</button>
+      <button class="viewbtn" id="view-btn-ledger" type="button" aria-pressed="false">Ledger</button>
+    </nav>
     <span class="topbar__spacer"></span>
     <label class="topbar__identity" for="identity">Acting as
       <select id="identity">
@@ -32,6 +36,9 @@
   </header>
 
   <main class="wrap">
+
+    <!-- Console view: the action panels. -->
+    <div id="view-console">
 
     <p class="lede">
       Each panel drives one real endpoint and shows the exact request and the live
@@ -246,6 +253,35 @@
       </section>
 
     </div>
+
+    </div><!-- /view-console -->
+
+    <!-- Ledger view: a read-only account-activity register built purely from
+         the existing GET /statement and GET /balance — no new endpoint, no
+         actions. All wire data renders through the render.js builders. -->
+    <div id="view-ledger" hidden>
+      <section class="panel ledger">
+        <header class="ledger__head">
+          <div class="panel__head">
+            <h2 class="panel__title">Account activity · <span class="mono" id="lv-tenant">tenant_alpha</span></h2>
+            <p class="panel__sub mono">GET /statement · GET /balance · read-only</p>
+          </div>
+          <nav class="monthnav" aria-label="Period">
+            <button class="btn btn--ghost monthnav__step" id="lv-prev" type="button" aria-label="previous month">‹</button>
+            <span class="monthnav__period mono" id="lv-period">—</span>
+            <button class="btn btn--ghost monthnav__step" id="lv-next" type="button" aria-label="next month">›</button>
+          </nav>
+        </header>
+        <div class="readout">
+          <span class="readout__label mono">BALANCE · ALL-TIME · MINOR UNITS</span>
+          <span class="readout__value num" id="lv-balance">—</span>
+        </div>
+        <div class="statement ledger__table" id="lv-body"></div>
+        <p class="hint">The period total sits under the table; the balance is the
+          all-time derived sum, not period-scoped. Reads are tenant-scoped — acting
+          as admin both return 401 (the admin token carries no tenant_id).</p>
+      </section>
+    </div><!-- /view-ledger -->
 
     <details class="config" id="settings">
       <summary>Advanced settings — connection &amp; seeded credentials (dev-only, prefilled from README.md)</summary>

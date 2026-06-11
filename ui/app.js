@@ -287,6 +287,85 @@ for (const btn of document.querySelectorAll('.lock-demo')) {
   btn.onclick = () => $(btn.dataset.demo).click()
 }
 
+// ---- ledger view -------------------------------------------------------------
+
+// A read-only register over the acting identity's account: the period's
+// statement lines plus the all-time derived balance, built purely from the
+// existing GET /statement and GET /balance. Month nav is simple prev/next
+// over YYYY-MM from the current UTC period — no unbounded scan.
+
+let lvPeriod = currentMonth()
+let lvSeq = 0 // drop a response that lands after a newer navigation
+
+function shiftMonth(period, delta) {
+  const [y, m] = period.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+async function fetchJson(url, who) {
+  try {
+    const res = await fetch(url, { headers: { authorization: `Bearer ${tokenFor(who)}` } })
+    const text = await res.text()
+    let body = null
+    try { body = JSON.parse(text) } catch { /* not JSON */ }
+    return { status: res.status, body, text }
+  } catch (err) {
+    return {
+      status: 0,
+      body: null,
+      text: `network error: ${err.message}\n\nIs the stack up? docker compose up --build`
+    }
+  }
+}
+
+async function refreshLedger() {
+  const who = identity()
+  const seq = ++lvSeq
+  $('lv-tenant').textContent = who
+  $('lv-period').textContent = lvPeriod
+  $('lv-balance').textContent = '—'
+  const body = $('lv-body')
+  body.innerHTML = loadingHtml()
+  const [st, bal] = await Promise.all([
+    fetchJson(`${cfg().ledger}/statement?period=${encodeURIComponent(lvPeriod)}`, who),
+    fetchJson(`${cfg().ledger}/balance`, who)
+  ])
+  if (seq !== lvSeq) return // a newer navigation already took over
+  if (bal.status === 200 && bal.body && typeof bal.body.balance_minor === 'string') {
+    $('lv-balance').textContent = fmtMinor(bal.body.balance_minor)
+  }
+  if (!(st.status === 200 && st.body && Array.isArray(st.body.lines))) {
+    body.innerHTML = ledgerErrorHtml({ status: st.status, bodyText: st.text || '(empty response body)' })
+    return
+  }
+  body.innerHTML = st.body.lines.length
+    ? ledgerTableHtml(st.body)
+    : ledgerEmptyHtml(st.body.period)
+}
+
+$('lv-prev').onclick = () => { lvPeriod = shiftMonth(lvPeriod, -1); refreshLedger() }
+$('lv-next').onclick = () => { lvPeriod = shiftMonth(lvPeriod, 1); refreshLedger() }
+
+// The ledger view follows the Acting-as switcher like everything else.
+$('identity').addEventListener('change', () => {
+  if (!$('view-ledger').hidden) refreshLedger()
+})
+
+// ---- view toggle ---------------------------------------------------------------
+
+function setView(view) {
+  $('view-console').hidden = view !== 'console'
+  $('view-ledger').hidden = view !== 'ledger'
+  for (const [btn, name] of [[$('view-btn-console'), 'console'], [$('view-btn-ledger'), 'ledger']]) {
+    btn.classList.toggle('viewbtn--on', view === name)
+    btn.setAttribute('aria-pressed', String(view === name))
+  }
+  if (view === 'ledger') refreshLedger()
+}
+$('view-btn-console').onclick = () => setView('console')
+$('view-btn-ledger').onclick = () => setView('ledger')
+
 // ---- theme ------------------------------------------------------------------
 
 // Light is the default; dark is the ui-design.md operational console register.

@@ -61,6 +61,12 @@ html[data-theme="dark"] {
 
 * { box-sizing: border-box; }
 
+/* The console toggles views, readouts, and lock blocks via the hidden
+   attribute; any display rule on the same element (.readout's flex, the
+   lock block's flex) silently beats the UA's [hidden] default — kill that
+   whole class of bug. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -126,6 +132,27 @@ body {
   transition: color 120ms, border-color 120ms;
 }
 .topbar__theme:hover { color: var(--ink); border-color: var(--ink-dim); }
+
+/* Console / Ledger view toggle: a quiet segmented control in the top bar. */
+.topbar__views {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+  overflow: hidden;
+}
+.viewbtn {
+  background: none;
+  border: 0;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: color 120ms, background-color 120ms;
+}
+.viewbtn:hover { color: var(--ink); }
+.viewbtn:focus { outline: none; box-shadow: var(--focus); }
+.viewbtn--on, .viewbtn--on:hover { background: var(--accent); color: var(--on-accent); }
 
 .dot {
   display: inline-block;
@@ -446,6 +473,50 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* ---- Ledger view (read-only register) --------------------------------------- */
+
+.ledger__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 18px;
+  flex-wrap: wrap;
+}
+.monthnav { display: flex; align-items: center; gap: 8px; }
+.monthnav__period { font-size: 13px; color: var(--ink); min-width: 64px; text-align: center; }
+.monthnav__step { padding: 4px 12px; line-height: 1; }
+
+.ledger-empty {
+  padding: 26px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-ctl);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  animation: veil 240ms var(--ease-veil) both;
+}
+.ledger-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-ctl);
+  background: var(--raised);
+  animation: veil 240ms var(--ease-veil) both;
+}
+.ledger-error .badge { align-self: flex-start; }
+.ledger-error__body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ink);
+}
+
 .foot {
   text-align: center;
   font-size: 11px;
@@ -494,6 +565,7 @@ body, .panel, .topbar, .result, .config, .panel__lock,
   }
   .topbar__identity select { min-height: 36px; padding: 6px 8px; }
   .topbar__theme { min-height: 36px; }
+  .viewbtn { min-height: 36px; }
   .config summary, .adv summary { padding-top: 10px; padding-bottom: 10px; }
 }
 

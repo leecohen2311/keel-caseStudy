@@ -27,11 +27,11 @@ If a first boot was ever interrupted mid-initialization, reset with
 
 ```bash
 npm install
-npm test    # full suite, all green (150 tests)
+npm test    # full suite, all green (157 tests)
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the whole vitest suite — 150 tests, all green:
+migrations + seed, and runs the whole vitest suite — 157 tests, all green:
 infra checks, schema/grant invariants (append-only, dedup boundary, tenant
 binding), the consumer's crash-injection tests — a real child-process worker
 SIGKILLed at four in-transaction boundaries — plus redelivery,
@@ -47,7 +47,9 @@ crash hooks inside the admin transactions, NUL/unpaired-surrogate
 rejection at the boundary, bounded adjustment reason), plus the Phase 9
 console smoke (dev-only CORS preflight on both services, page wiring) and
 the Phase 11 console hardening (the ENABLE_DEV_CORS gate off-by-default on
-both services, and the XSS-inert render layer fed hostile API payloads). The DEL-3
+both services, and the XSS-inert render layer fed hostile API payloads), and
+the Phase 12 Ledger-view smoke (the read-only register's builders render
+hostile statement data inert; the [hidden] kill rule). The DEL-3
 required tests are explicitly named: the "DEL-3 crash-restart test" and
 "DEL-3 concurrency test" describes in `test/phase2_crash.test.ts`. The
 repo was built test-first: every phase's suite was committed red before
@@ -174,7 +176,10 @@ curl -i http://localhost:3001/webhooks/usage \
 (static page under `ui/`, no build step). It is a pure client of the two
 APIs — every panel shows the exact request and the live response. The seeded
 credentials are built in as defaults: pick an identity in the **Acting as**
-switcher and go, no token pasting. Idempotency keys, delivery ids, and
+switcher and go, no token pasting. A top-bar toggle switches between
+**Console** (the action panels) and **Ledger**, a read-only account-activity
+register for the acting tenant built purely from `GET /statement` and
+`GET /balance`, with prev/next month navigation. Idempotency keys, delivery ids, and
 timestamps are auto-generated; each panel's optional fields sit behind a
 small **Advanced** toggle, and the connection settings (URLs, JWTs, webhook
 secret) live under **Advanced settings** at the bottom of the page. Dev
@@ -214,6 +219,12 @@ Manual test checklist (one pass exercises every feature):
    phase-7 tests.)
 9. **Authorization, negative.** As `tenant_beta`, "Send anyway" on Close
    period → `403`. Remove/garble a token under Advanced settings → `401`.
+10. **Ledger view.** Flip the top-bar toggle to **Ledger** → the acting
+    tenant's activity for the current month (event date, kind, metric, qty,
+    amount), the period total, and the all-time derived balance; ‹ › steps
+    months ("no activity this period" on an idle month). Switch tenants →
+    that tenant's rows only. As `admin` → the live `401` error state (reads
+    are tenant-scoped).
 
 ## Price book
 
