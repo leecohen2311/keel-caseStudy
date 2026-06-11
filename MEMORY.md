@@ -5,10 +5,11 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (ALL PHASES 0-10 complete; code phases individually gated
-ready: true; full suite 133/133 green from a clean DB; graded docs finalized. The
-build is delivery-ready on local main — NOT pushed; the final push is the engineer's
-call)._
+_Last updated: 2026-06-11 (ALL PHASES 0-11 complete; code phases individually gated;
+full suite 150/150 green from a clean DB; REVIEW.md audit: all 42 requirement IDs met.
+Phase 11 = console hardening (ENABLE_DEV_CORS gate, XSS-inert render layer, mobile +
+design polish). The build is delivery-ready on local main — NOT pushed; the final push
+is the engineer's call)._
 
 ## Current status
 
@@ -136,8 +137,9 @@ to main.
   independent record for reconcile).
 - **In-process consumer worker** in the Ledger service, but run as a **spawnable child
   process from day one** so the real SIGKILL harness works in Phase 2.
-- **Phase 8 UI is kept** despite OOS-1, on the graders' explicit in-person instruction.
-  Noted as an override in DESIGN.md. Still last and first-cut.
+- **The UI (shipped as Phase 9 after the d786fa2 re-scope) is kept** despite OOS-1, on
+  the graders' explicit in-person instruction. Noted as an override in DESIGN.md. Still
+  last and first-cut.
 - **Phase-boundary production-readiness gate, mechanized (2026-06-10).** Every phase
   ends with the saved `phase-gate` workflow (`.claude/workflows/phase-gate.js`, or
   `/phase-gate <phase>`), run right **after** the implementation commit so review fixes
@@ -375,18 +377,27 @@ explicitly pinned `READ COMMITTED`, never an inherited server default. `POST /re
 runs at `REPEATABLE READ` for a stable snapshot (prevents false positives from in-flight
 events).
 
-**Dev-only CORS + the console (Phase 9).** Both services answer any-path `OPTIONS`
-with 204 (the short-circuit sits before routing and before any transaction logic) and
-attach `access-control-allow-origin: *`, `allow-methods: GET, POST, OPTIONS`, and
-`allow-headers: Authorization, Content-Type, X-Key-Id, X-Timestamp, X-Signature` to
-every response — errors and the 413 flush path included, because the browser console
-must be able to read the 401/403 demos. A local/case-study convenience, NOT a
-production posture (no cookies, bearer-token auth, localhost only); clearly labeled in
-code, README, and the page footer. The console itself is a pure static client under
-`ui/` (plain HTML/CSS/JS, no build step), served by an nginx compose service on
-**:8080**; it embeds the README's seeded dev JWTs and the seeded webhook secret (for
-in-browser SubtleCrypto signing) — a deliberate, labeled test convenience. No business
-logic, no new server endpoint, nothing that can touch an invariant.
+**Dev-only CORS + the console (Phase 9; gated Phase 11).** The dev CORS layer is
+**gated behind `ENABLE_DEV_CORS=1`** (exact-match `=== '1'`), **off by default**, and
+set only in `docker-compose.yml` on both services — so "dev-only" is enforced by
+mechanism, not label (test/phase-11/cors_gate.test.ts pins off-by-default; the phase-9
+suite opts in and pins the enabled contract). When enabled, both services answer
+any-path `OPTIONS` with 204 (the short-circuit sits before routing and before any
+transaction logic) and attach `access-control-allow-origin: *`,
+`allow-methods: GET, POST, OPTIONS`, and `allow-headers: Authorization, Content-Type,
+X-Key-Id, X-Timestamp, X-Signature` to every response — errors and the 413 flush path
+included, because the browser console must be able to read the 401/403 demos. When
+disabled, `OPTIONS` falls through to routing like any other method and no
+`access-control-*` header is attached anywhere. A local/case-study convenience, NOT a
+production posture (no cookies, bearer-token auth, localhost only); labeled in code,
+README, and the page footer. The console itself is a pure static client under `ui/`
+(plain HTML/CSS/JS, no build step), served by an nginx compose service on **:8080**;
+since Phase 11 every HTML fragment it builds from wire data comes from the pure,
+escape-everything builders in `ui/render.js` (XSS-inert, proven by
+test/phase-11/ui_render.test.ts). It embeds the README's seeded dev JWTs and the
+seeded webhook secret (for in-browser SubtleCrypto signing) — a deliberate, labeled
+test convenience. No business logic, no new server endpoint, nothing that can touch an
+invariant.
 
 **Infra (Phase 0).** `git init` first. One `migrate` container runs migrations and the
 seed as `app_owner`; services depend on it (avoids the two-service migration race).
@@ -880,6 +891,52 @@ I worked", two new had-to-learn items (the U+FFFD encoder collision, SubtleCrypt
 secure-context), UI cut-note corrected to built-as-pure-client. README left as
 verified by the Phase 9 gate. Final state: full suite green from a clean DB, tree
 clean, TDD-visible unsquashed history. Not pushed.
+
+### Phase 11 — console hardening, mobile, design polish + CORS gate (2026-06-10/11)
+
+**What happened:** preceded by a full requirements-compliance audit (REVIEW.md,
+commit `5695cf0`): a multi-agent hostile-grader pass over all 42 requirement IDs with
+skeptic verification — all 42 met, zero correctness defects; the flagged items
+(DEL-4 page headroom, dev-CORS-as-label, doc staleness nits) drove this phase and the
+docs pass after it. Then two TDD pairs plus a polish commit. (1) CORS gate: red
+`5770f3a` (off-by-default suite, verified failing for the right reason) → green
+`d85ecea` — `ENABLE_DEV_CORS === '1'` gates the CORS headers and the OPTIONS
+short-circuit in both mains (the only backend change, subtractive; frozen files
+untouched), compose sets the flag on both services, README documents it; the phase-9
+suite opts in so the enabled contract stays pinned. (2) XSS-inert render layer: red
+`c3f2fca` (hostile-payload suite against not-yet-existing ui/render.js) → green
+`7a33be2` — all console HTML built from wire data moves into pure escape-everything
+builders in `ui/render.js` (escapeHtml now covers single quotes), app.js keeps
+wiring/fetch only, plus loading/busy/unreachable/empty states. Disclosed in the green
+commit: the red suite's loader had to switch createRequire→node:vm (type:module parses
+.js as ESM under require, silently skipping a CJS guard); assertions byte-identical.
+(3) Polish `fd9f2e0`, CSS-only: responsive to a real 360px viewport (measured
+scrollWidth == 360, no element past the edge), 44px tap targets (measured), 16px field
+text on touch, ui-design §4 motion (veil reveal on render, button press/busy, badge
+transitions, dot breathe) fully disabled under prefers-reduced-motion; light + dark
+verified by screenshot, live request/response verified in-browser via CDP.
+
+**Gate (first run ready: false — every deterministic check green; docs-state only):**
+clean-DB suites **150/150** (133 + 17 phase-11); compose smoke proved all eight checks
+live (console + assets 200; preflights 204 with the full header set; 401 readable with
+allow-origin; event 202 → balance +7; adjustment −250 once; reconcile ok:true; webhook
+sign → replay charged exactly once with a DB cross-check → tamper 401; crash hooks
+inert; zero-sum standing check clean). Review + skeptic: 0 blockers, 0 majors; the
+loader switch judged "a harness fix, not a weakening" (nit). 2 confirmed minors, both
+docs: README still counted 133 tests, and the pinned Phase 9 CORS block contradicted
+the now-gated implementation (ENABLE_DEV_CORS recorded in no pin).
+
+**Solved (this gate-fix commit, docs-only):** README counts → 150 with a phase-11
+coverage line; the CORS pin rewritten as gated (off-by-default, exact-match flag,
+compose-only, OPTIONS fall-through) with render.js added to the console pin; the stale
+"Phase 8 UI" decision-log line corrected; this Phase 11 log.
+
+**Accepted (logged, not hidden):** the two flag-on tests in cors_gate.test.ts passed
+before the gate existed (the then-unconditional behavior satisfied them); they pin the
+enabled contract through the change rather than prove the gate — the off-by-default
+four are the red proof. REVIEW.md's full flag list (test-coverage nits: webhook/
+consumer negative-quantity, storage_gb_hour rate, /statement cross-tenant, reconcile
+locator fields) stays surfaced for the engineer, deliberately not silently "fixed".
 
 ## Open / pick up next time
 

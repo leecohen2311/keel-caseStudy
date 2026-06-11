@@ -27,11 +27,11 @@ If a first boot was ever interrupted mid-initialization, reset with
 
 ```bash
 npm install
-npm test    # full suite, all green (133 tests)
+npm test    # full suite, all green (150 tests)
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the whole vitest suite — 133 tests, all green:
+migrations + seed, and runs the whole vitest suite — 150 tests, all green:
 infra checks, schema/grant invariants (append-only, dedup boundary, tenant
 binding), the consumer's crash-injection tests — a real child-process worker
 SIGKILLed at four in-transaction boundaries — plus redelivery,
@@ -45,7 +45,9 @@ reconciliation (tamper/deletion/symmetric-scale detection, zero false
 positives under concurrent load), and the Phase 8 hardening (SIGKILL
 crash hooks inside the admin transactions, NUL/unpaired-surrogate
 rejection at the boundary, bounded adjustment reason), plus the Phase 9
-console smoke (dev-only CORS preflight on both services, page wiring). The DEL-3
+console smoke (dev-only CORS preflight on both services, page wiring) and
+the Phase 11 console hardening (the ENABLE_DEV_CORS gate off-by-default on
+both services, and the XSS-inert render layer fed hostile API payloads). The DEL-3
 required tests are explicitly named: the "DEL-3 crash-restart test" and
 "DEL-3 concurrency test" describes in `test/phase2_crash.test.ts`. The
 repo was built test-first: every phase's suite was committed red before
