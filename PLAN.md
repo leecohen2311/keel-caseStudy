@@ -122,22 +122,65 @@ Each phase: **Goal, Build, Tests-first, Done when.**
 **Tests first:** `tamper a posting as app_owner to flagged`; `delete a balanced pair to flagged`; `scale both legs symmetrically to flagged`; `reconcile under concurrent consumer load to zero flags`.
 **Done when:** reconcile catches every injected corruption class and stays silent under normal concurrency.
 
-### Phase 8: Invariant verification and adversarial hardening
-**Goal:** prove the system to a hostile grader (DEL-3).
-**Build:** consolidate the crash-restart and concurrency tests; expand the SIGKILL matrix across both services and the admin paths; a runnable invariant self-check.
-**Tests first:** the full adversarial suite: redelivery, double-submit, mid-transaction kill of either service, concurrent close, forged/expired tokens, replayed webhook, corruption injection.
-**Done when:** the adversarial suite is green.
+### Phase 8: Hardening — explicit DEL-3 test set, admin crash safety, input gaps
+**Goal:** close the deferred hardening cluster and make DEL-3's required tests
+grader-findable. Keep it minimal: most adversarial coverage already exists.
+**Build:**
+- **Explicit DEL-3 naming.** The brief requires at least one crash-restart test and one
+  concurrency test, clearly identifiable. The coverage exists (`phase2_crash`, the
+  two-worker drain, concurrent close); make one crash-restart test and one concurrency
+  test obviously named for a grader — thin naming/wrappers only, no duplicated coverage.
+- **Admin crash safety** (the deferred Phase 6 gap): a test-only `LEDGER_CRASH_POINT`
+  hook in the ledger admin transactions mirroring the consumer's `CRASH_POINT`
+  (`adjustment-before-commit`, `close-before-commit`), placed between the INSERT and the
+  COMMIT. SIGKILL there must leave no partial state (no committed closure, no enqueued
+  adjustment) and recover cleanly on retry.
+- **Two cheap input gaps** across the body routes (`/events`, `/webhooks/usage`,
+  `/adjustments`, `/periods/close`): reject strings containing NUL or unpaired
+  surrogates with a 400 at the boundary (instead of a fail-closed 500 at INSERT); bound
+  the adjustment `reason` to 1024 bytes with a 400 over it.
+- **Do NOT touch** reconcile logic or the test seeds. The REC-2 orphan-transaction gap
+  and the unbounded reconcile scan stay exactly as documented in DESIGN.md/MEMORY.md —
+  accepted, not TODOs.
+**Tests first:** SIGKILL at each new admin crash point (no partial state, clean retry);
+a 400 per NUL/surrogate rejection per route; `reason` over 1024 bytes to 400.
+**Done when:** the full suite is green from a clean DB and the gate passes.
 
-### Phase 9: UI (kept by explicit instruction; overrides OOS-1)
-**Goal:** a thin read-only lens; **must not touch any invariant.**
-**Build:** minimal page showing balance, statements, period status, submit a test event, trigger a close (admin); read-only against the existing APIs; no new privileged path or business logic; built against `ui-design.md`.
-**Tests first:** light smoke tests that pages render and call the API.
-**Done when:** it renders and round-trips one event and one close. First thing cut under time pressure.
+### Phase 9: UI console (kept by explicit instruction; overrides OOS-1)
+**Goal:** a polished browser console a tester can use to exercise EVERY endpoint and see
+the live result. A pure client of the existing APIs: no business logic, no new server
+endpoint, nothing that can touch an invariant.
+**Build:**
+- One self-contained static front end (plain HTML/CSS/JS, no build step) under `ui/`,
+  served by a small static container added to docker-compose so `docker compose up`
+  also brings up the UI on its own port; URL documented in README.
+- Styled against `ui-design.md` (tokens, type scale, surfaces, light/dark). Status
+  badges (2xx green, 4xx amber/red), result panels showing the actual request/response.
+- Identity switcher across the seeded JWTs (tenant_alpha, tenant_beta, admin) so
+  authorization is demonstrable (admin action as a tenant shows the 403).
+- One panel per feature: submit usage (replay + 409 easy to demo), signed webhook
+  (HMAC-SHA256 via SubtleCrypto in-browser — labeled a local test convenience), balance,
+  statement (period picker), adjustment (admin), close period (200 vs 409), reconcile
+  (rendered discrepancy report).
+- Dev-only permissive CORS headers + OPTIONS preflight on the ingest and ledger HTTP
+  layers (additive header layer, clearly marked a local/case-study convenience).
+**Tests first:** light smoke tests that the page renders and wires to the API (UI tests
+are explicitly low-value; do not over-invest). CORS preflight tests on both services.
+**Done when:** every feature panel round-trips live against the compose stack; README
+has a "Try it in the browser" walkthrough with the seeded credentials.
 
-### Phase 10: Docs finalization
-**Goal:** the graded documents.
-**Build:** finalize `DESIGN.md` (three pages or fewer, DEL-4) and `NOTES.md` (DEL-5, including "where I had to learn something new"); polish `ARCHITECTURE.md`; confirm `REQUIREMENTS.md` traceability.
-**Done when:** both graded docs are complete and consistent with the code.
+### Phase 10: Docs finalization and delivery prep
+**Goal:** the graded documents, tight and true.
+**Build:** finalize `DESIGN.md` (three pages or fewer, DEL-4): document the
+max(event-month, current-month) period rule as a deliberate choice, update the
+deferred/known-gaps sections to what Phase 8 closed vs. what stays (REC-2 orphan gap,
+reconcile scan), confirm the UI override of OOS-1 is noted. Finalize `NOTES.md` (DEL-5):
+fold in Phases 4-9 as living-log entries; confirm all DEL-5 elements. Confirm README's
+one-command boot (including the UI), credentials, and honesty. Final check: full suite
+green from a clean DB, tree clean, TDD-visible history (DEL-1). **No push** — the final
+push is the engineer's call.
+**Done when:** both graded docs are complete and consistent with the code, and the final
+state is reported.
 
 ---
 
