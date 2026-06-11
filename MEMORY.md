@@ -5,11 +5,8 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-7 complete and individually gated ready: true;
-full suite 115/115 green; engineer signed off on the Phase 4-7 run and closed its three
-follow-ups — dead healthz stub deleted, REC-2 narrowing accepted into DESIGN.md's
-known gaps, hardening cluster logged as Phase 8 deferrals. Next: Phase 8 per PLAN.md,
-not started)._
+_Last updated: 2026-06-10 (Phases 0-8 complete and individually gated ready: true;
+full suite 127/127 green from a clean DB. Next: Phase 9 (UI console) per PLAN.md)._
 
 ## Current status
 
@@ -53,7 +50,12 @@ documented DESIGN.md known gap (do not fix); the NUL/surrogate 500-class, unboun
 `reason`, unbounded reconcile scan, and admin-transaction SIGKILL coverage recorded in
 DESIGN.md as explicit Phase 8 deferrals (do not build early).
 
-**Next:** **Phase 8** (adversarial hardening, per PLAN.md). Not started.
+**Phase 8 (hardening) is built and gated:** red commit `f27b0b5`, green commit
+`1378812`, gate-fix docs commit; **127 tests green from a clean DB**; gate
+**ready: true** after one docs-only review-fix pass (1 confirmed major — stale pins —
+plus 2 minors; see the Phase 8 log).
+
+**Next:** **Phase 9** (UI console, per PLAN.md). Not started.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -204,7 +206,19 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
   `UNIQUE(tenant_id, event_id)`; an unbounded incompressible key overflows the btree
   index-row cap (~2.7KB) into a 500, and an accepted giant key bloats the never-purged
   queue. Apply the same bound to `/adjustments` (GAP-14) and the webhook delivery id when
-  those land.
+  those land. Phase 8 adds well-formedness (the boundary string gate below); the 400
+  message for gated key fields reads "must be a well-formed string of 1..N bytes".
+- **Boundary string gate pinned (Phase 8):** every validated free-form string on the
+  four body routes — `/events` `tenant` + `idempotency_key`, webhook `event_id`,
+  `/adjustments` `tenant` + `reason` + `idempotency_key`, `/periods/close` `tenant` —
+  must be well-formed: no U+0000 and no unpaired UTF-16 surrogate, else 400 at the
+  boundary (`src/validate.ts` `isCleanString`). Why: Postgres rejects NUL at INSERT (a
+  fail-closed 500 instead of the pinned 400), and a lone surrogate is worse — Node's
+  UTF-8 encoder silently mutates it to U+FFFD on the wire, so two distinct keys
+  ('a\uD800b', 'a\uD801b') collapse into one stored idempotency key.
+- **Adjustment `reason` bound pinned (Phase 8, amends GAP-14):** a non-empty,
+  well-formed string of at most 1024 UTF-8 bytes, else 400 (the reason lands verbatim
+  in the never-purged queue; 1024 is sane headroom far below the 256 KiB body cap).
 - **Body cap pinned (Phase 3):** the `/events` JSON body is capped at 256 KiB → 413 (the
   status is flushed to the client before the socket drops). The webhook raw-body route
   gets its own pinned cap when Phase 4 lands.
@@ -267,7 +281,8 @@ Defaults chosen so the agent does not improvise. Change here first if you disagr
 - **GAP-11 pinned (Phase 4):** body `{event_id, metric, quantity, event_date?, tenant?}`.
   `metric`/`quantity`/`event_date` validate exactly like `POST /events` (`event_date`
   absent defaults to now()); `tenant` is ignored (the secret owner wins); `event_id` is
-  bounded 1..200 UTF-8 bytes like an idempotency key (it feeds the same unique index).
+  bounded 1..200 UTF-8 bytes like an idempotency key (it feeds the same unique index)
+  and, since Phase 8, well-formed (the boundary string gate).
   Post-verification validation failures are 400; same delivery id with a different
   payload is 409 at enqueue, the same as `/events`.
 - **Webhook body cap pinned (Phase 4):** the raw-body route is capped at 256 KiB → 413,
@@ -319,8 +334,9 @@ enqueue against the queue, the same as usage.
   nothing written. Same 256 KiB JSON body cap → 413 as `/events`.
 - **GAP-14:** `amount_minor` must be a JSON number that is a nonzero safe integer with
   `|amount_minor| <= 10^12` — the consumer's own bound, rejected 400 at the boundary
-  instead of accepted-then-dead-lettered. `reason` a non-empty string;
-  `idempotency_key` 1..200 UTF-8 bytes (the pinned key bound).
+  instead of accepted-then-dead-lettered. `reason` a non-empty well-formed string of
+  1..1024 bytes (the bound and well-formedness added in Phase 8 — see the pins above);
+  `idempotency_key` 1..200 UTF-8 bytes (the pinned key bound, well-formed since Phase 8).
 - **GAP-17:** the route stamps `event_date = now()` at enqueue (mirrors `/events`'
   absent-date default); the payload is `{ amount_minor, reason }` (numbers as JSON
   numbers, pinned above).
@@ -350,6 +366,10 @@ tenants plus 1 admin, no signup), sample curls, the webhook signing recipe, and 
 run tests. Test infra uses a throwaway Postgres compose service (not testcontainers). The
 Ingest service carries a test-only `INGEST_CRASH_POINT` env hook mirroring the consumer's
 `CRASH_POINT` (e.g. `before-enqueue-commit`), for the crash-before-commit test (GAP-6).
+The Ledger service likewise carries a test-only `LEDGER_CRASH_POINT` hook (Phase 8) with
+points `adjustment-before-commit` and `close-before-commit`, between the INSERT and the
+COMMIT of the two admin transactions. All three hooks are inert unless the env is set
+(never set in compose).
 
 ## Reconciliation design (REC-1..3)
 
@@ -741,6 +761,49 @@ drain → zero false positives, then the new charge reconciled clean. Full 3-len
    unbounded over the system's life since done rows are never purged. Fine at
    case-study scale (300-row drain reconciles in <1 s); a real deployment would page
    it. Logged as a known cut.
+
+### Phase 8 — hardening (2026-06-10)
+
+**What happened:** PLAN.md's Phases 8-10 were first rewritten to the engineer's final
+scope (`d786fa2`): Phase 8 kept minimal — explicit DEL-3 naming, admin crash safety,
+two input gaps; reconcile logic and seeds untouched. TDD: 11 red tests committed first
+(`f27b0b5`) — the red run itself was diagnostic: a NUL string died as the documented
+fail-closed 500, but a lone surrogate was **worse than documented** — Node's UTF-8
+encoder silently mutates it to U+FFFD, so two distinct idempotency keys collapse into
+one stored key and the request 202s. Green commit (`1378812`): test-only
+`LEDGER_CRASH_POINT` SIGKILL hooks between INSERT and COMMIT in both admin
+transactions (`adjustment-before-commit`, `close-before-commit`); shared
+`src/validate.ts` `isCleanString` (no U+0000, no unpaired surrogates) wired into every
+validated free-form string on the four body routes as a 400; adjustment `reason`
+bounded at 1024 bytes; `test/phase2_crash.test.ts` describes renamed to explicitly
+grader-findable "DEL-3 crash-restart test" / "DEL-3 concurrency test" (renames only).
+127/127 green from a clean DB. Frozen files untouched.
+
+**Gate (first run ready: false — all deterministic checks passed; docs-state findings
+only):** clean-DB suites 127/127; compose cold boot + README-credential smoke proved
+all five checks live (valid event 202 → balance +100; NUL key → field-specific 400
+with nothing enqueued; 1025-byte reason → 400; normal adjustment 202 → posted −50;
+reconcile ok:true; crash hooks confirmed inert in compose). 3-lens review + skeptic:
+1 confirmed MAJOR — MEMORY's pinned contracts contradicted shipped behavior (GAP-14
+still said "reason a non-empty string", key pins lacked well-formedness,
+LEDGER_CRASH_POINT absent from the env-hook record); 2 confirmed minors — README still
+claimed 115 tests / coverage through Phase 7; the Phase 2 log's "deferred to Phase 8"
+trio (worker supervision polish, lock_timeout, client-level pg error listener) was
+dropped by the rescope with the cut recorded nowhere. 1 nit (informational):
+close-before-commit fires before the status UPDATE — same transaction, identical
+rollback, satisfies PLAN's stated window.
+
+**Solved (this gate-fix commit, docs-only):** pins amended (boundary string gate +
+reason bound pinned as Phase 8 blocks; GAP-11/GAP-14/key-bound/Infra lines updated);
+README counts and coverage refreshed to 127 with the DEL-3 test names called out;
+Phase 8 log + status refresh.
+
+**Decision recorded — the Phase 2 deferred trio is CUT, not forgotten:** the
+engineer's Phase 8 rescope (the new PLAN.md, `d786fa2`) deliberately excludes worker
+supervision polish, lock_timeout, and the client-level error listener. No invariant is
+at risk: the Phase 2 skeptic proved the crash-respawn path invariant-safe (7/7
+trials), and lock_timeout is liveness-only. DESIGN.md's cut list picks this up in
+Phase 10's deferred-sections update (noted in PLAN.md Phase 10).
 
 ## Open / pick up next time
 

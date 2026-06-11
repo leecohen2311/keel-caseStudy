@@ -174,7 +174,9 @@ has a "Try it in the browser" walkthrough with the seeded credentials.
 **Build:** finalize `DESIGN.md` (three pages or fewer, DEL-4): document the
 max(event-month, current-month) period rule as a deliberate choice, update the
 deferred/known-gaps sections to what Phase 8 closed vs. what stays (REC-2 orphan gap,
-reconcile scan), confirm the UI override of OOS-1 is noted. Finalize `NOTES.md` (DEL-5):
+reconcile scan, and the cut Phase 2 trio — worker supervision polish, lock_timeout,
+client-level pg error listener — liveness-only, recorded as cut at the Phase 8 gate),
+confirm the UI override of OOS-1 is noted. Finalize `NOTES.md` (DEL-5):
 fold in Phases 4-9 as living-log entries; confirm all DEL-5 elements. Confirm README's
 one-command boot (including the UI), credentials, and honesty. Final check: full suite
 green from a clean DB, tree clean, TDD-visible history (DEL-1). **No push** — the final
