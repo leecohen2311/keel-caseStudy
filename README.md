@@ -172,8 +172,11 @@ curl -i http://localhost:3001/webhooks/usage \
 (static page under `ui/`, no build step). It is a pure client of the two
 APIs — every panel shows the exact request and the live response, with the
 seeded credentials prefilled. Dev conveniences, clearly not a production
-posture: permissive CORS on both services, and the seeded webhook secret in
-the page so the browser can sign deliveries with SubtleCrypto.
+posture: permissive CORS on both services — **gated behind
+`ENABLE_DEV_CORS=1`, off by default, set only in `docker-compose.yml`** so
+the browser console works there and the permissive headers cannot ship
+anywhere by accident — and the seeded webhook secret in the page so the
+browser can sign deliveries with SubtleCrypto.
 
 Manual test checklist (one pass exercises every feature):
 

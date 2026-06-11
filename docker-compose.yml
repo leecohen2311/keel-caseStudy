@@ -32,6 +32,9 @@ services:
       PORT: "3001"
       # Dev-only secret; the pre-minted JWTs in README.md are signed with it.
       JWT_SECRET: dev_jwt_secret_1
+      # Dev-only CORS for the browser console on :8080. Off by default in the
+      # services; this compose stack is the one place it is turned on.
+      ENABLE_DEV_CORS: "1"
     ports:
       - "3001:3001"
     depends_on:
@@ -47,6 +50,8 @@ services:
       # Same dev-only secret as ingest: one HS256 secret across both services,
       # so the README's pre-minted tenant/admin JWTs verify here too.
       JWT_SECRET: dev_jwt_secret_1
+      # Dev-only CORS for the browser console on :8080 (see ingest).
+      ENABLE_DEV_CORS: "1"
     ports:
       - "3002:3002"
     depends_on:

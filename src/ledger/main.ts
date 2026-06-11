@@ -40,16 +40,22 @@ function crashIfRequested(point: string): void {
   if (process.env.LEDGER_CRASH_POINT === point) process.kill(process.pid, 'SIGKILL')
 }
 
-// Dev-only CORS (Phase 9): the browser console under ui/ is a pure client on
-// its own origin, so every response — including errors, which the console
-// must be able to read to demo a 401/403 — carries permissive CORS headers,
-// and OPTIONS preflights are answered 204. A local/case-study convenience,
-// NOT a production posture; an additive header layer with no route logic.
-const CORS_HEADERS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'Authorization, Content-Type, X-Key-Id, X-Timestamp, X-Signature'
-}
+// Dev-only CORS (Phase 9, gated Phase 11): the browser console under ui/ is
+// a pure client on its own origin, so every response — including errors,
+// which the console must be able to read to demo a 401/403 — carries
+// permissive CORS headers, and OPTIONS preflights are answered 204. Enabled
+// ONLY by ENABLE_DEV_CORS=1 (docker-compose.yml sets it for the console);
+// off by default, so "dev-only" is enforced by mechanism, not by label. An
+// additive header layer with no route logic.
+const DEV_CORS_ENABLED = process.env.ENABLE_DEV_CORS === '1'
+const CORS_HEADERS: Record<string, string> = DEV_CORS_ENABLED
+  ? {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers':
+        'Authorization, Content-Type, X-Key-Id, X-Timestamp, X-Signature'
+    }
+  : {}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json', ...CORS_HEADERS })
@@ -529,8 +535,9 @@ async function handleReconcile(req: IncomingMessage, res: ServerResponse): Promi
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
-  if (req.method === 'OPTIONS') {
-    // Dev-only CORS preflight (Phase 9); see CORS_HEADERS above.
+  if (req.method === 'OPTIONS' && DEV_CORS_ENABLED) {
+    // Dev-only CORS preflight (Phase 9); see CORS_HEADERS above. With the
+    // gate off, OPTIONS falls through to routing like any other method.
     res.writeHead(204, CORS_HEADERS)
     res.end()
     return
