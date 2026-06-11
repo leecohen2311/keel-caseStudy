@@ -26,29 +26,24 @@ If a first boot was ever interrupted mid-initialization, reset with
 
 ```bash
 npm install
-npm test    # full suite — includes the intentionally-red TDD scaffold (see below)
-
-# implemented phases only (all green, 106 tests):
-bash scripts/test.sh test/phase0_infra.test.ts test/phase1_schema.test.ts \
-  test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3 \
-  test/phase-4 test/phase-5 test/phase-6
+npm test    # full suite, all green (115 tests)
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
-migrations + seed, and runs the whole vitest suite. The repo is built
-test-first: the suite for the one not-yet-built phase (reconcile —
-`test/phase-7`) is committed red on purpose
-and stays red until that phase ships, so the full run currently exits failing
-**by design**. The implemented-phases command above is the green gate: infra
-checks, schema/grant invariants (append-only, dedup boundary, tenant binding),
-the consumer's crash-injection tests — a real child-process worker SIGKILLed
-at four in-transaction boundaries — plus redelivery, poison/dead-letter,
-closed-period reroute, two-worker concurrency, the Phase 3 tenant API
-(JWT hardening, validation, request idempotency, ingest crash hook), the
-Phase 4 signed webhook (forged/tampered/stale/replayed deliveries), the
-Phase 5 reads (derived balance, tenant isolation, reproducible statements),
-and the Phase 6 admin actions (authorization, adjustment exactly-once,
-one-winner concurrent close).
+migrations + seed, and runs the whole vitest suite — 115 tests, all green:
+infra checks, schema/grant invariants (append-only, dedup boundary, tenant
+binding), the consumer's crash-injection tests — a real child-process worker
+SIGKILLed at four in-transaction boundaries — plus redelivery,
+poison/dead-letter, closed-period reroute, two-worker concurrency, the
+Phase 3 tenant API (JWT hardening, validation, request idempotency, ingest
+crash hook), the Phase 4 signed webhook (forged/tampered/stale/replayed
+deliveries), the Phase 5 reads (derived balance, tenant isolation,
+reproducible statements), the Phase 6 admin actions (authorization,
+adjustment exactly-once, one-winner concurrent close), and the Phase 7
+reconciliation (tamper/deletion/symmetric-scale detection, zero false
+positives under concurrent load). The repo was built test-first: every
+phase's suite was committed red before its implementation (the commit
+history shows the red/green pairs).
 
 Requires Docker and Node >= 24.
 
@@ -133,6 +128,12 @@ curl -i http://localhost:3002/periods/close \
 # 200 {"closed":true,...}; closing again -> 409. New events targeting a
 # closed month reroute forward to the next open period — never lost,
 # never booked into the closed month.
+
+# Reconcile: independently re-derive state from the queue's done rows and
+# flag drift (tampered/deleted/scaled postings); 200 even when flagging.
+curl -s http://localhost:3002/reconcile \
+  -H "Authorization: Bearer <admin JWT>" -d '{}'
+# {"ok":true,"discrepancies":[]}
 ```
 
 ### Submit usage via the signed webhook
