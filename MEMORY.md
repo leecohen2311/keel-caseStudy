@@ -5,8 +5,9 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-10 (Phases 0-8 complete and individually gated ready: true;
-full suite 127/127 green from a clean DB. Next: Phase 9 (UI console) per PLAN.md)._
+_Last updated: 2026-06-10 (Phases 0-9 complete and individually gated ready: true;
+full suite 133/133 green from a clean DB. Next: Phase 10 (docs finalization) per
+PLAN.md)._
 
 ## Current status
 
@@ -55,7 +56,12 @@ DESIGN.md as explicit Phase 8 deferrals (do not build early).
 **ready: true** after one docs-only review-fix pass (1 confirmed major — stale pins —
 plus 2 minors; see the Phase 8 log).
 
-**Next:** **Phase 9** (UI console, per PLAN.md). Not started.
+**Phase 9 (UI console) is built and gated:** red commit `41df701`, green commit
+`75b9d76`, review-fix `a087c95`, gate-fix docs commit; **133 tests green from a
+clean DB**; gate **ready: true** with zero confirmed code findings (2 docs-only
+readiness minors fixed at the gate; see the Phase 9 log).
+
+**Next:** **Phase 10** (docs finalization and delivery prep, per PLAN.md). Not started.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -358,6 +364,19 @@ enqueue against the queue, the same as usage.
 explicitly pinned `READ COMMITTED`, never an inherited server default. `POST /reconcile`
 runs at `REPEATABLE READ` for a stable snapshot (prevents false positives from in-flight
 events).
+
+**Dev-only CORS + the console (Phase 9).** Both services answer any-path `OPTIONS`
+with 204 (the short-circuit sits before routing and before any transaction logic) and
+attach `access-control-allow-origin: *`, `allow-methods: GET, POST, OPTIONS`, and
+`allow-headers: Authorization, Content-Type, X-Key-Id, X-Timestamp, X-Signature` to
+every response — errors and the 413 flush path included, because the browser console
+must be able to read the 401/403 demos. A local/case-study convenience, NOT a
+production posture (no cookies, bearer-token auth, localhost only); clearly labeled in
+code, README, and the page footer. The console itself is a pure static client under
+`ui/` (plain HTML/CSS/JS, no build step), served by an nginx compose service on
+**:8080**; it embeds the README's seeded dev JWTs and the seeded webhook secret (for
+in-browser SubtleCrypto signing) — a deliberate, labeled test convenience. No business
+logic, no new server endpoint, nothing that can touch an invariant.
 
 **Infra (Phase 0).** `git init` first. One `migrate` container runs migrations and the
 seed as `app_owner`; services depend on it (avoids the two-service migration race).
@@ -804,6 +823,37 @@ supervision polish, lock_timeout, and the client-level error listener. No invari
 at risk: the Phase 2 skeptic proved the crash-respawn path invariant-safe (7/7
 trials), and lock_timeout is liveness-only. DESIGN.md's cut list picks this up in
 Phase 10's deferred-sections update (noted in PLAN.md Phase 10).
+
+### Phase 9 — UI console (2026-06-10)
+
+**What happened:** TDD: 6 red tests committed first (`41df701`) — CORS preflight 204 +
+permissive allow headers on both services, allow-origin on real responses including
+errors, and the page-wiring smoke (panels, identity switcher, endpoint calls,
+SubtleCrypto). Deliberately light per PLAN.md: the invariants live behind the APIs,
+already proven by phases 0-8. Green commit (`75b9d76`): `ui/` — a static, no-build,
+no-dependency console styled to ui-design.md's operational console register
+(space-blue surfaces, Fragment Mono numerals/badges, tabular right-aligned numbers,
+the four fixed status intents, light-theme toggle); identity switcher across the
+seeded JWTs; one panel per feature, each showing the exact request and live response
+(replay/409 demos on /events, byte-identical webhook replay signed in-browser,
+balance readout, statement table, adjustments, close 200-vs-409, rendered reconcile
+report); dev-only CORS as an additive header layer on both services; nginx compose
+service on :8080; README "Try it in the browser" + 9-step manual checklist. Review
+(slimmed inline 3-lens pass per the low-risk-phase rule) caught one real item —
+`fmtMinor()` output reaching `innerHTML` unescaped — fixed as visible commit
+`a087c95`. Frozen files untouched.
+
+**Gate (first run ready: false — deterministic checks all green; docs-state only):**
+clean-DB suites 133/133; compose smoke proved all five checks live (UI 200 with all
+seven panels + assets; preflights 204 with the full header set; browser-equivalent
+202/200/401-with-allow-origin flow; webhook README recipe end-to-end with
+replay-charged-once verified in the DB — one txn, two postings, net zero; crash hooks
+inert in both running containers). Zero confirmed code findings. Two docs-only
+readiness minors: README counts stale (127 → 133, no phase-9 coverage line) and the
+new CORS wire contract unpinned in MEMORY.
+
+**Solved (this gate-fix commit):** README counts/coverage refreshed; dev-only
+CORS + console pinned block added; Phase 9 log + status refresh.
 
 ## Open / pick up next time
 
