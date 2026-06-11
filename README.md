@@ -28,25 +28,27 @@ If a first boot was ever interrupted mid-initialization, reset with
 npm install
 npm test    # full suite — includes the intentionally-red TDD scaffold (see below)
 
-# implemented phases only (all green, 85 tests):
+# implemented phases only (all green, 106 tests):
 bash scripts/test.sh test/phase0_infra.test.ts test/phase1_schema.test.ts \
   test/phase2_consumer.test.ts test/phase2_crash.test.ts test/phase-3 \
-  test/phase-4 test/phase-5
+  test/phase-4 test/phase-5 test/phase-6
 ```
 
 `npm test` brings up a throwaway Postgres (port 5433, tmpfs), applies
 migrations + seed, and runs the whole vitest suite. The repo is built
-test-first: the suites for not-yet-built phases (admin
-adjustments/close, reconcile — `test/phase-6..7`) are committed red on purpose
-and stay red until their phase ships, so the full run currently exits failing
+test-first: the suite for the one not-yet-built phase (reconcile —
+`test/phase-7`) is committed red on purpose
+and stays red until that phase ships, so the full run currently exits failing
 **by design**. The implemented-phases command above is the green gate: infra
 checks, schema/grant invariants (append-only, dedup boundary, tenant binding),
 the consumer's crash-injection tests — a real child-process worker SIGKILLed
 at four in-transaction boundaries — plus redelivery, poison/dead-letter,
 closed-period reroute, two-worker concurrency, the Phase 3 tenant API
 (JWT hardening, validation, request idempotency, ingest crash hook), the
-Phase 4 signed webhook (forged/tampered/stale/replayed deliveries), and the
-Phase 5 reads (derived balance, tenant isolation, reproducible statements).
+Phase 4 signed webhook (forged/tampered/stale/replayed deliveries), the
+Phase 5 reads (derived balance, tenant isolation, reproducible statements),
+and the Phase 6 admin actions (authorization, adjustment exactly-once,
+one-winner concurrent close).
 
 Requires Docker and Node >= 24.
 
@@ -113,6 +115,24 @@ curl -s "http://localhost:3002/statement?period=2026-06" \
 # {"period":"2026-06","lines":[{txn_id, kind, metric, quantity, event_date,
 #  amount_minor}...],"total_minor":"100"} — ?period defaults to the current
 #  UTC month; amounts are BigInt-safe decimal strings
+```
+
+### Admin actions (require the admin JWT; tenant tokens get 403)
+
+```bash
+# Credit 250 minor units to tenant_alpha (enqueued, posted by the consumer)
+curl -i http://localhost:3002/adjustments \
+  -H "Authorization: Bearer <admin JWT>" -H "Content-Type: application/json" \
+  -d '{"tenant":"tenant_alpha","amount_minor":-250,"idempotency_key":"adj-demo-1","reason":"goodwill credit"}'
+# 202; same key + same payload replays the 202, different payload -> 409
+
+# Close a billing period (concurrent-safe: exactly one winner)
+curl -i http://localhost:3002/periods/close \
+  -H "Authorization: Bearer <admin JWT>" -H "Content-Type: application/json" \
+  -d '{"tenant":"tenant_alpha","period":"2026-05"}'
+# 200 {"closed":true,...}; closing again -> 409. New events targeting a
+# closed month reroute forward to the next open period — never lost,
+# never booked into the closed month.
 ```
 
 ### Submit usage via the signed webhook
