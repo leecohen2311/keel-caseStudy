@@ -123,8 +123,31 @@ argue the cuts (EVAL-1).
 in person to build it, so it is included as an explicit override, built last and read-only,
 touching no invariant.
 
-**Honest known gap (EVAL-4):** a process-crashing poison event is not durably
-dead-lettered, because the attempt counter cannot live in the transaction that rolls back
-on the crash. Caught exceptions dead-letter at five attempts. Covering a hard crash-loop
-would need a two-phase claim that compromises the single-transaction guarantee the rest
-of the system rests on, so I documented it instead of building it.
+**Honest known gaps (EVAL-4):**
+
+- A process-crashing poison event is not durably dead-lettered, because the attempt
+  counter cannot live in the transaction that rolls back on the crash. Caught exceptions
+  dead-letter at five attempts. Covering a hard crash-loop would need a two-phase claim
+  that compromises the single-transaction guarantee the rest of the system rests on, so I
+  documented it instead of building it.
+- Reconcile compares postings against the independent `done` queue rows, so a forged but
+  internally-balanced transaction with **no** queue row reconciles clean. This requires
+  ledger-level INSERT, which the exposed Ingest role is grant-blocked from; it is not
+  reachable from any external surface. Closing it would mean teaching test seeds to write
+  matching `done` rows so reconcile could flag orphan transactions — deferred
+  deliberately, as the grant boundary makes the gap non-reachable and the change would
+  churn a green suite for no reachable benefit.
+
+**Deferred to Phase 8 (planned hardening, not forgotten):**
+
+- NUL or unpaired-surrogate strings pass the boundary validators and die at INSERT as a
+  fail-closed 500 instead of a 400, across the body routes (pre-existing class since
+  Phase 3; fail-closed: the transaction rolls back and rejects — it never corrupts).
+- The adjustment `reason` field is unbounded below the 256 KiB body cap and lands
+  verbatim in the never-purged queue.
+- Reconcile loads every `done` row in one in-memory pass — unbounded over the system's
+  life, fine at single-node case-study scale.
+- No SIGKILL hook yet on the two new admin transactions (adjustment post, period close);
+  both run on the same single-transaction, commit-before-response spine as the
+  crash-tested usage path and inherit that guarantee — the explicit crash test lands with
+  Phase 8's expanded kill matrix.

@@ -6,8 +6,10 @@ narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is fo
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
 _Last updated: 2026-06-10 (Phases 0-7 complete and individually gated ready: true;
-full suite 115/115 green; awaiting engineer sign-off on the Phase 4-7 run before
-Phase 8)._
+full suite 115/115 green; engineer signed off on the Phase 4-7 run and closed its three
+follow-ups — dead healthz stub deleted, REC-2 narrowing accepted into DESIGN.md's
+known gaps, hardening cluster logged as Phase 8 deferrals. Next: Phase 8 per PLAN.md,
+not started)._
 
 ## Current status
 
@@ -44,8 +46,14 @@ green commit `e6cb758`, README `262d184`; 106 tests green from a clean DB; gate
 (the TDD scaffold has no remaining red); gate **ready: true** (0 blocking; 2 distinct
 confirmed minors accepted — see the Phase 7 log).
 
-**Next:** engineer sign-off on the Phase 4-7 run (each phase's boundaries and accepted
-findings are in the Phase log), then **Phase 8** (adversarial hardening, per PLAN.md).
+**Engineer sign-off received (2026-06-10):** the Phase 4-7 run is cleared. The three
+surfaced items were closed per the engineer's decisions — `src/healthz.ts` deleted
+(dead code, nothing referenced it); the reconcile queue-orphan non-check accepted as a
+documented DESIGN.md known gap (do not fix); the NUL/surrogate 500-class, unbounded
+`reason`, unbounded reconcile scan, and admin-transaction SIGKILL coverage recorded in
+DESIGN.md as explicit Phase 8 deferrals (do not build early).
+
+**Next:** **Phase 8** (adversarial hardening, per PLAN.md). Not started.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -352,7 +360,11 @@ not an error); `ok === true` iff `discrepancies` is empty; each discrepancy carr
 locate it. Auth is the same admin gate as Phase 6 (401/403). The transaction is
 `REPEATABLE READ` **READ ONLY**. A header without a queue row is NOT flagged — the
 queue's `done` rows drive the re-derivation (they are the independent record); the
-global zero-sum and leg-count checks still cover every header.
+global zero-sum and leg-count checks still cover every header. **Engineer-accepted
+(2026-06-10) as a documented known gap, closed — not an open TODO:** not reachable from
+any external surface (forging it needs ledger-level INSERT, grant-blocked for
+`app_ingest`), and fixing it would churn a green suite for no reachable benefit; written
+into DESIGN.md's known-gaps section. Do not "fix" the seeds or reconcile for this.
 
 `POST /reconcile` (admin), one `REPEATABLE READ` transaction. Per tenant: re-rate each
 `done` usage queue row through the price book and compare to the posted usage amount;
@@ -722,9 +734,9 @@ drain → zero false positives, then the new charge reconciled clean. Full 3-len
    reconcile silently: query 1 walks only `done` queue rows, query 2 only checks
    legs=2/net=0. Pinned with rationale (Phase 5/6 seeds legitimately write queue-less
    headers; flagging would false-positive), and structurally mitigated by the grant
-   split, but the reviewers note the rationale is a test-infrastructure constraint,
-   not a fundamental one — revisit in Phase 8 if seeds are taught to write matching
-   done rows.
+   split. **Engineer decision (2026-06-10): accepted and closed** — documented in
+   DESIGN.md's known-gaps section as deliberate judgment (non-reachable externally;
+   fixing would churn a green suite for no reachable benefit). Not a Phase 8 item.
 2. Reconcile loads every `done` row (payloads included) into one in-memory pass —
    unbounded over the system's life since done rows are never purged. Fine at
    case-study scale (300-row drain reconciles in <1 s); a real deployment would page
