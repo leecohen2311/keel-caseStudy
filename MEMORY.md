@@ -6,10 +6,12 @@ narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is fo
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
 _Last updated: 2026-06-11 (ALL PHASES 0-11 complete; code phases individually gated;
-full suite 150/150 green from a clean DB; REVIEW.md audit: all 42 requirement IDs met.
+full suite 150/150 green from a clean DB; the REVIEW.md audit found all 42 requirement
+IDs met (file since removed from the tree per the engineer — recoverable at `5695cf0`).
 Phase 11 = console hardening (ENABLE_DEV_CORS gate, XSS-inert render layer, mobile +
-design polish). The build is delivery-ready on local main — NOT pushed; the final push
-is the engineer's call)._
+design polish), followed by the console light re-skin session (see its log). Phases
+0-11 (through `c5c2599`) pushed to origin/main by the engineer 2026-06-11 00:21; the
+re-skin session's two commits are local-only — that push is the engineer's call)._
 
 ## Current status
 
@@ -84,18 +86,20 @@ ARCHITECTURE's stale `algo` column removed; NOTES got the Phase 11 catch bullet;
 one-command boot from clean volumes serves the console + APIs with the README
 credentials, frozen files untouched.
 
-**Surfaced from outside this session (engineer's attention):** (1) commit `1008c5f`
+**Surfaced from outside this session (engineer's attention):** commit `1008c5f`
 "feat shorter notes" (23:14, mid-audit, not made by this session) compressed NOTES.md
 2,122→~1,800 words; all four DEL-5 elements verified intact, REVIEW §12 amended — but
 the commit message breaks the repo's message convention and sits in the graded history;
-consider whether to keep it as-is. (2) An untracked `GRADE-REPORT.md` (23:34, also not
-created by this session; self-labeled "internal, NOT part of the submission", graded at
-the mid-phase `d85ecea` state with now-stale numbers) was left in the repo root,
-untouched — decide: delete, move out, or gitignore before pushing.
+consider whether to keep it as-is. (The second surfaced artifact, the untracked
+`GRADE-REPORT.md`, was resolved in the re-skin session: deleted on the engineer's
+instruction, along with REVIEW.md — see that session's log.)
 
-**Next:** engineer sign-off on REVIEW.md's §10 flags and the Phase 11 run, decide on the
-two surfaced artifacts above, then the engineer pushes. Nothing is pushed; local main
-only.
+**Next:** engineer sign-off on the Phase 11 run and the UI re-skin session (which ran
+WITHOUT the phase gate, on the engineer's instruction), decide on the `1008c5f`
+commit-message question above. **Push state (2026-06-11):** phases 0-11 (through
+`c5c2599`) were pushed to origin/main by the engineer at 00:21, outside this session;
+the re-skin + artifact-removal commits are local-only — until they are pushed,
+REVIEW.md is still present in the remote tree.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -960,6 +964,36 @@ enabled contract through the change rather than prove the gate — the off-by-de
 four are the red proof. REVIEW.md's full flag list (test-coverage nits: webhook/
 consumer negative-quantity, storage_gb_hour rate, /statement cross-tenant, reconcile
 locator fields) stays surfaced for the engineer, deliberately not silently "fixed".
+
+### Console light re-skin session (2026-06-11)
+
+**What happened:** a visual + information-architecture pass over `ui/` only (no
+backend change, frozen files untouched, render.js byte-identical). Light theme is now
+the default (ui-design.md §1-6 editorial register: white hairline cards on the
+near-white canvas, steel-blue accent, mono reserved for machine values); dark stays
+behind the toggle. Progressive disclosure: the seeded URLs/JWTs/webhook secret moved
+into a collapsed "Advanced settings" disclosure at the bottom (same input ids, the
+secret's never-ship-to-a-client note kept); per-panel non-essential fields
+(idempotency keys, delivery id, event_date, timestamp — all auto-filled) sit behind a
+per-panel "Advanced" toggle; the oversized 01-07 numerals and the top-bar raw URLs are
+gone. Admin panels rest in a quiet locked state under a tenant identity, with two
+deliberate outs: "Switch to admin" and "Send anyway · see the 403" (the authorization
+demo is preserved, not invited by default). README "Try it in the browser" + checklist
+rewritten to match. Removed on the engineer's instruction: untracked `GRADE-REPORT.md`
+(deleted) and `REVIEW.md` (git rm — the audit remains in history at `5695cf0`; MEMORY
+references to its flags stay as historical record).
+
+**Verification (gate NOT run — engineer's explicit instruction; recorded, not
+hidden):** full suite 150/150 green from a clean DB after the change; cold compose
+boot; a 22-check CDP browser walkthrough of the README checklist against the live
+stack (202 / replay-202 / 409 / locked-panel 403 / switch-to-admin / adjustment 202 /
+webhook sign + byte-identical replay / admin-balance 401 / exactly-once balance −145 /
+statement rows / reconcile ALL CLEAR / theme toggle); true-360px viewport via CDP
+device metrics: scrollWidth == 360, no element past the edge; zero page JS errors.
+Phase 11 hardening preserved: all wire data still renders through ui/render.js
+builders, ENABLE_DEV_CORS untouched, 44px tap targets / 16px touch fields /
+prefers-reduced-motion blocks kept. Selector contract of the phase-9/11 suites
+unchanged (same panel ids, same render.js API).
 
 ## Open / pick up next time
 
