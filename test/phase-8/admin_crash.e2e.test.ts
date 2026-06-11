@@ -27,7 +27,7 @@ afterAll(async () => {
 
 async function closures(tenantId: string) {
   const r = await owner.query(
-    `SELECT c.closure_id, bp.period_key, bp.status
+    `SELECT c.period_id, bp.period_key, bp.status
        FROM period_closures c
        JOIN billing_periods bp ON bp.period_id = c.period_id
       WHERE c.tenant_id = $1`,

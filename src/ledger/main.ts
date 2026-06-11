@@ -4,6 +4,7 @@ import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { verifyJwt, tenantOf } from '../auth.ts'
+import { isCleanString } from '../validate.ts'
 import { periodKeyOf } from './consumer.ts'
 import { rate } from './pricebook.ts'
 
@@ -27,6 +28,17 @@ const pool = DATABASE_URL ? new pg.Pool({ connectionString: DATABASE_URL, max: 5
 const MAX_BODY_BYTES = 256 * 1024 // same pinned cap as /events
 const MAX_AMOUNT = 1_000_000_000_000 // 10^12 — the consumer's own bound (GAP-14)
 const MAX_IDEMPOTENCY_KEY_BYTES = 200 // pinned key bound, same as /events
+// reason lands verbatim in the never-purged queue; bound it well below the
+// 256 KiB body cap (Phase 8).
+const MAX_REASON_BYTES = 1024
+
+// Test-only crash injection for the two admin transactions, mirroring the
+// consumer's CRASH_POINT and ingest's INGEST_CRASH_POINT: a real, uncatchable
+// SIGKILL at a named boundary between the INSERT and the COMMIT. Inert unless
+// LEDGER_CRASH_POINT is set (never in prod).
+function crashIfRequested(point: string): void {
+  if (process.env.LEDGER_CRASH_POINT === point) process.kill(process.pid, 'SIGKILL')
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' })
@@ -173,6 +185,7 @@ async function enqueueAdjustment(
        RETURNING queue_id`,
       [row.tenantId, row.eventId, JSON.stringify(row.payload), row.payloadHash, row.eventDate]
     )
+    crashIfRequested('adjustment-before-commit')
     if (inserted.rowCount === 1) {
       await client.query('COMMIT')
       return 'created'
@@ -223,7 +236,7 @@ async function handleAdjustments(req: IncomingMessage, res: ServerResponse): Pro
 
   // The admin exception (pinned): the target tenant comes from the body.
   const tenant = body.tenant
-  if (typeof tenant !== 'string' || tenant.length === 0) {
+  if (typeof tenant !== 'string' || tenant.length === 0 || !isCleanString(tenant)) {
     sendJson(res, 400, { error: 'tenant is required' })
     return
   }
@@ -238,17 +251,23 @@ async function handleAdjustments(req: IncomingMessage, res: ServerResponse): Pro
     return
   }
   const reason = body.reason
-  if (typeof reason !== 'string' || reason.length === 0) {
-    sendJson(res, 400, { error: 'reason is required' })
+  if (
+    typeof reason !== 'string' ||
+    reason.length === 0 ||
+    !isCleanString(reason) ||
+    Buffer.byteLength(reason, 'utf8') > MAX_REASON_BYTES
+  ) {
+    sendJson(res, 400, { error: 'reason must be a well-formed string of 1..1024 bytes' })
     return
   }
   const key = body.idempotency_key
   if (
     typeof key !== 'string' ||
     key.length === 0 ||
+    !isCleanString(key) ||
     Buffer.byteLength(key, 'utf8') > MAX_IDEMPOTENCY_KEY_BYTES
   ) {
-    sendJson(res, 400, { error: 'idempotency_key must be a string of 1..200 bytes' })
+    sendJson(res, 400, { error: 'idempotency_key must be a well-formed string of 1..200 bytes' })
     return
   }
 
@@ -313,7 +332,7 @@ async function handleClose(req: IncomingMessage, res: ServerResponse): Promise<v
   const body = parsed as Record<string, unknown>
 
   const tenant = body.tenant
-  if (typeof tenant !== 'string' || tenant.length === 0) {
+  if (typeof tenant !== 'string' || tenant.length === 0 || !isCleanString(tenant)) {
     sendJson(res, 400, { error: 'tenant is required' })
     return
   }
@@ -344,6 +363,7 @@ async function handleClose(req: IncomingMessage, res: ServerResponse): Promise<v
       `INSERT INTO period_closures (tenant_id, period_id) VALUES ($1, $2)`,
       [tenant, periodId]
     )
+    crashIfRequested('close-before-commit')
     await client.query(
       `UPDATE billing_periods SET status = 'closed'
         WHERE period_id = $1 AND tenant_id = $2`,

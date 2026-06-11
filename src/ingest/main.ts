@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import pg from 'pg'
 import { verifyJwt, tenantOf } from '../auth.ts'
+import { isCleanString } from '../validate.ts'
 import { PRICE_BOOK } from '../ledger/pricebook.ts'
 
 // Ingest: authenticate -> authorize -> validate -> enqueue, in that pinned
@@ -179,7 +180,7 @@ async function handleEvents(req: IncomingMessage, res: ServerResponse): Promise<
   // 3. Validate (400). GAP-8 pinned: tenant is a documented payload field, so
   //    a missing/non-string body.tenant is a missing required field, not a
   //    silent default to the token tenant.
-  if (typeof body.tenant !== 'string') {
+  if (typeof body.tenant !== 'string' || !isCleanString(body.tenant)) {
     sendJson(res, 400, { error: 'tenant is required' })
     return
   }
@@ -202,9 +203,10 @@ async function handleEvents(req: IncomingMessage, res: ServerResponse): Promise<
   if (
     typeof key !== 'string' ||
     key.length === 0 ||
+    !isCleanString(key) ||
     Buffer.byteLength(key, 'utf8') > MAX_IDEMPOTENCY_KEY_BYTES
   ) {
-    sendJson(res, 400, { error: 'idempotency_key must be a string of 1..200 bytes' })
+    sendJson(res, 400, { error: 'idempotency_key must be a well-formed string of 1..200 bytes' })
     return
   }
   let eventDate: string
@@ -335,9 +337,10 @@ async function handleWebhook(req: IncomingMessage, res: ServerResponse): Promise
   if (
     typeof deliveryId !== 'string' ||
     deliveryId.length === 0 ||
+    !isCleanString(deliveryId) ||
     Buffer.byteLength(deliveryId, 'utf8') > MAX_IDEMPOTENCY_KEY_BYTES
   ) {
-    sendJson(res, 400, { error: 'event_id must be a string of 1..200 bytes' })
+    sendJson(res, 400, { error: 'event_id must be a well-formed string of 1..200 bytes' })
     return
   }
   const metric = body.metric
