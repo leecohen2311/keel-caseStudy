@@ -13,6 +13,9 @@
   --int-danger: #e2606a;  --int-danger-surface: #e2606a1a;
 
   --con-radius: 3px;
+  /* Single shared easing (§4): reveals are a fade + slight rise ("veil").
+     Console motion is snappier than the shell — state lands fast. */
+  --ease-veil: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html[data-theme="dark"] {
@@ -68,7 +71,8 @@ body {
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   padding: 10px 20px;
   background: var(--raised);
   border-bottom: 1px solid var(--rule);
@@ -109,7 +113,12 @@ body {
   margin-right: 7px;
   vertical-align: 1px;
 }
-.dot--active { background: var(--int-active); box-shadow: 0 0 6px var(--int-active); }
+.dot--active {
+  background: var(--int-active);
+  box-shadow: 0 0 6px var(--int-active);
+  animation: breathe 2.4s var(--ease-veil) infinite;
+}
+@keyframes breathe { 50% { opacity: 0.55; } }
 
 /* ---- Page frame ------------------------------------------------------ */
 
@@ -141,16 +150,20 @@ body {
 .config[open] summary { border-bottom: 1px solid var(--rule); color: var(--ink); }
 .config__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 12px 18px;
   padding: 14px;
 }
+/* Reveal on expand: the [open] match (re)starts the veil animation. */
+.config[open] .config__grid { animation: veil 220ms var(--ease-veil) both; }
 
 /* ---- Panel grid ------------------------------------------------------ */
 
+/* min(420px, 100%) so a panel can never force the page wider than the
+   viewport — at ~360px everything stacks with no horizontal scroll. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: 18px;
 }
 
@@ -163,6 +176,7 @@ body {
   flex-direction: column;
   gap: 12px;
 }
+.panel:hover { border-color: var(--ink-dim); }
 .panel--wide { grid-column: 1 / -1; }
 
 .panel__head { display: flex; align-items: flex-start; gap: 16px; }
@@ -183,7 +197,7 @@ body {
 
 /* ---- Fields & buttons ------------------------------------------------ */
 
-.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 14px; }
 .fields label, .config__grid label {
   display: flex;
   flex-direction: column;
@@ -192,6 +206,7 @@ body {
   color: var(--ink-dim);
 }
 .fields input, .fields select, .config__grid input, .config__grid textarea {
+  min-width: 0; /* let grid/flex tracks shrink the field, never the page */
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: var(--con-radius);
@@ -206,7 +221,8 @@ body {
 .config__grid textarea { resize: vertical; word-break: break-all; }
 
 .keyrow { display: flex; gap: 6px; }
-.keyrow input { flex: 1; }
+.keyrow input { flex: 1; min-width: 0; }
+.keyrow .btn { flex-shrink: 0; }
 
 .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .hint { font-size: 11.5px; color: var(--ink-dim); max-width: 46ch; }
@@ -222,9 +238,10 @@ body {
   border-radius: var(--con-radius);
   padding: 7px 14px;
   cursor: pointer;
-  transition: filter 120ms;
+  transition: filter 120ms var(--ease-veil), transform 90ms var(--ease-veil);
 }
 .btn:hover { filter: brightness(1.12); }
+.btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn--ghost {
   background: none;
@@ -302,6 +319,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  transition: color 120ms var(--ease-veil), background-color 120ms var(--ease-veil);
 }
 .badge--ok     { color: var(--int-ok);     background: var(--int-ok-surface); }
 .badge--warn   { color: var(--int-warn);   background: var(--int-warn-surface); }
@@ -317,6 +335,8 @@ body {
 
 /* ---- Tables (statement, reconcile) ------------------------------------ */
 
+/* Tables scroll inside their panel rather than widening the page (mobile). */
+.statement, .recon { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .statement table, .recon table {
   width: 100%;
   border-collapse: collapse;
@@ -370,4 +390,61 @@ body {
   color: var(--ink-dim);
   padding: 18px 20px 26px;
   border-top: 1px solid var(--rule);
+}
+
+/* ---- Motion (§4): one veil reveal for everything that (re)renders ------ */
+
+/* These nodes are recreated on every render, so the animation re-runs
+   exactly when content lands — result blocks, tables, the reconcile
+   verdict, the balance figure. Calm and quick; never layout-shifting. */
+.result__req, .result__status, .result__body, .result__loading,
+.statement table, .recon table, .recon__clear, .readout {
+  animation: veil 240ms var(--ease-veil) both;
+}
+@keyframes veil {
+  from { opacity: 0; transform: translateY(3px); }
+}
+
+/* Theme switch lands softly. */
+body, .panel, .classbar, .result, .config,
+.fields input, .fields select, .config__grid input, .config__grid textarea {
+  transition-property: background-color, color, border-color;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-veil);
+}
+/* ---- Mobile (~360px) and touch ----------------------------------------- */
+
+@media (max-width: 600px) {
+  .wrap { padding: 16px 12px 48px; }
+  .panel { padding: 16px 14px 14px; }
+  .fields { grid-template-columns: 1fr; } /* one field per row on phones */
+  .classbar { padding: 8px 12px; }
+  /* The service URLs duplicate the config panel; give the bar back to the
+     identity switcher on small screens. */
+  .classbar__urls, .classbar__sep { display: none; }
+  .panel__num { font-size: 2rem; }
+  .readout__value { font-size: 2.2rem; }
+}
+
+/* Tap targets >= 44px and no-zoom input text wherever touch is primary. */
+@media (max-width: 600px), (pointer: coarse) {
+  .btn { min-height: 44px; padding: 10px 16px; }
+  .fields input, .fields select,
+  .config__grid input, .config__grid textarea {
+    min-height: 44px;
+    font-size: 16px; /* keeps iOS from zooming the focused field */
+  }
+  .classbar__item select { min-height: 36px; padding: 6px 8px; }
+  .classbar__btn { min-height: 36px; }
+  .config summary { padding: 14px; }
+}
+
+/* ---- Reduced motion: the console answers instantly, nothing moves ------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
