@@ -45,7 +45,7 @@ restricted roles; a separate owner role runs migrations and the seed.
 
 ```sql
 tenants(tenant_id PK, name, created_at)
-webhook_secrets(key_id PK, tenant_id FK, secret, algo, created_at)   -- per source
+webhook_secrets(key_id PK, tenant_id FK, secret, created_at)   -- per source; no algo column: the HMAC algorithm is pinned server-side, never data-driven
 
 event_queue(
   queue_id     BIGSERIAL PK,

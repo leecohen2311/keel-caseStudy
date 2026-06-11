@@ -71,8 +71,31 @@ override note, at ~3 pages (DEL-4). NOTES.md folds in the per-phase living log
 DEL-5 elements. README verified accurate by the Phase 9 gate (one-command boot incl.
 the console, 133-test green suite, credentials, curls).
 
-**Next:** engineer sign-off on the Phase 8-10 run, then the engineer pushes. Nothing
-is pushed; local main only.
+**The audit + Phase 11 session (2026-06-10/11) is done:** REVIEW.md (`5695cf0`) walks
+all 42 requirement IDs — every one met, zero correctness defects, flags surfaced in its
+§10 for sign-off. Phase 11 (console hardening: the ENABLE_DEV_CORS gate as the only
+backend change, the XSS-inert `ui/render.js` layer, 360px-responsive + ui-design motion)
+shipped as two TDD pairs plus a polish commit, gated (deterministic checks green first
+run; two docs minors fixed in the visible gate-fix commit). Part C docs landed: DESIGN
+condensed to 1,340 words — measured 3 pages at every standard print default (≤1.3 line
+height; ≥1.35 tips a 4th page by ~2 lines) — with the REC-2 grant-wording fix folded in;
+ARCHITECTURE's stale `algo` column removed; NOTES got the Phase 11 catch bullet; REVIEW
+§12 records the amendments. Final state verified: **150/150 from a clean DB**, cold
+one-command boot from clean volumes serves the console + APIs with the README
+credentials, frozen files untouched.
+
+**Surfaced from outside this session (engineer's attention):** (1) commit `1008c5f`
+"feat shorter notes" (23:14, mid-audit, not made by this session) compressed NOTES.md
+2,122→~1,800 words; all four DEL-5 elements verified intact, REVIEW §12 amended — but
+the commit message breaks the repo's message convention and sits in the graded history;
+consider whether to keep it as-is. (2) An untracked `GRADE-REPORT.md` (23:34, also not
+created by this session; self-labeled "internal, NOT part of the submission", graded at
+the mid-phase `d85ecea` state with now-stale numbers) was left in the repo root,
+untouched — decide: delete, move out, or gitignore before pushing.
+
+**Next:** engineer sign-off on REVIEW.md's §10 flags and the Phase 11 run, decide on the
+two surfaced artifacts above, then the engineer pushes. Nothing is pushed; local main
+only.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.

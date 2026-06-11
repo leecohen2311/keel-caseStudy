@@ -356,3 +356,36 @@ Judgment calls and accepted gaps, per the fixing policy — surfaced, never sile
   MEMORY's session log.
 - Part C (docs only): DESIGN.md condensation to a measured ≤ 3 pages; the
   ARCHITECTURE.md `algo`-column staleness; the MEMORY "Phase 8 UI" stale line.
+
+## 12. Post-audit amendments (applied later the same session)
+
+The audit above describes the repo at `3ea72fc`. The session then executed the flagged
+work; the deltas that supersede numbers quoted above:
+
+- **DEL-4 resolved, measured.** DESIGN.md condensed from 1,546 to **1,340 words** —
+  wording compression plus two merges (append-only folded into the INV-1 entry; the
+  webhook threat model folded inline into the INV-8 entry, which also fixes the
+  "INV-8 by cross-reference" weakness) — with all five mandated elements and every
+  known-gap item intact. Re-measured with the same headless-Chrome pipeline (11pt
+  serif, US-letter, 1-inch margins): **3 pages at every standard print default**
+  (Word ≈1.08-1.15, LaTeX/browser ≈1.2, and up through line-height 1.3); only
+  generous ≥1.35 spacing tips a 4th page, by ~2 lines. Section 5 promised ≤3 pages
+  at line-height 1.45; reaching that bar would have required cutting ~25% of the
+  graded argument, so the achieved bar is stated here instead, precisely.
+- **Flag 1 applied:** the DESIGN known-gaps wording now reads "the grant boundary
+  blocks the exposed Ingest role outright, and the ledger service has no code path
+  that writes a header without a queue row" — the accurate two-part claim.
+- **Flag 9 applied (two of three):** ARCHITECTURE.md's schema sketch no longer shows
+  the dropped `algo` column; MEMORY's "Phase 8 UI" decision-log line corrected. The
+  ingest comment claiming the unknown-key 401 is "indistinguishable" remains flagged,
+  not changed (a backend edit outside this session's sanction).
+- **§5 DEL-5 numbers superseded by an engineer edit:** commit `1008c5f`
+  ("feat shorter notes", 23:14 local — made outside this session while the audit ran)
+  compressed NOTES.md from 2,122 to ~1,800 words; all four DEL-5 elements verified
+  still present afterward. This session then added one Phase 11 bullet to the
+  per-phase catch list. The audit's "longer than DESIGN.md" nit is softened but the
+  catch-list still skips Phases 6-7 (their accepted minors live in MEMORY/DESIGN).
+- **Phase 11 outcome:** the dev-CORS gate and the XSS-inert render layer shipped under
+  TDD and passed the phase gate (deterministic checks green first run, 150/150 from a
+  clean DB; two docs minors fixed as the visible gate-fix commit). The suite count
+  everywhere in the docs is now 150.
