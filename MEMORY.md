@@ -34,9 +34,13 @@ below and the production-readiness-gate decision above).
 85 tests green from a clean DB; gate **ready: true** with zero confirmed findings
 (see the Phase 5 log).
 
-**Next:** **Phase 6** (admin adjustments + close), then 7, gated per phase; this
-session runs Phases 4-7 in order (gate ready + clean tree is the bar to continue),
-with engineer sign-off on the whole run at the end.
+**Phase 6 (admin adjustments + close) is built and gated:** pin commit `abd2d07`,
+green commit `e6cb758`, README `262d184`; 106 tests green from a clean DB; gate
+**ready: true** (0 blocking; 3 confirmed minors accepted — see the Phase 6 log).
+
+**Next:** **Phase 7** (reconcile), gated; this session runs Phases 4-7 in order (gate
+ready + clean tree is the bar to continue), with engineer sign-off on the whole run at
+the end.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -314,6 +318,11 @@ enqueue against the queue, the same as usage.
   `YYYY-MM` (month 01-12), else 400.
 - The admin credential itself was closed in Phase 3 (claim, not row; README pre-minted
   JWT; `seed/seed.sql` comment) — nothing further to seed in Phase 6.
+- **Hybrid tokens pinned (Phase 6 review):** admin is decided solely by the verified
+  `admin === true` claim; a `tenant_id` riding in the same token is **ignored** on the
+  admin routes (and such a token would also pass the tenant reads). Only the
+  `JWT_SECRET` holder can mint one; the seeded admin JWT carries no `tenant_id`. Do not
+  build anything that relies on a hybrid token.
 
 **Isolation.** Consumer / adjustments / close — and, since Phase 3, the ingest enqueue
 (its duplicate-key conflict path is the same block-then-reread pattern) — run at
@@ -627,6 +636,48 @@ reads, the new line present; beta token sees only beta's balance; 401 unauthenti
 stub was its only importer) — left in place pending engineer say-so on deletion; an
 admin token (no `tenant_id`) gets 401 on the tenant read routes (unpinned, no test
 constrains it).
+
+### Phase 6 — admin adjustments and period close (2026-06-10)
+
+**What happened:** TDD: the 21 Phase 6 tests were red on main (scaffold `5c3307c`/
+`dc1962f`; 1 intentional green — the Phase 1 `kind` column-grant backstop);
+re-verified red. Pins first (`abd2d07`): GAP-12 (close success 200, 409 via the
+closure unique violation, strict YYYY-MM), GAP-14 (amount a nonzero safe-integer JSON
+number, |x| ≤ 10^12, bounded key), GAP-17 (event_date = now() at enqueue), FK→400
+mapping, 401-before-403 ordering, 256 KiB cap. One green commit (`e6cb758`):
+`/adjustments` validates then **enqueues** `kind='adjustment'` (`adj:{key}`, payload
+`{amount_minor, reason}`, hash over both) through the same READ COMMITTED
+commit-before-202 transaction shape as ingest — the frozen consumer posts it, no
+parallel posting path; `/periods/close` is one transaction: get-or-create →
+`FOR UPDATE` → INSERT the append-only closure (the unique violation IS the 409 for
+re-close and the concurrent loser) → flip the status cache. Admin = the verified
+`admin === true` claim, checked before the body is read. README curls (`262d184`).
+106 tests green from a clean DB.
+
+**Gate (ready: true, 0 blocking):** clean-DB suites 106/106; compose smoke proved all
+eight checks live (double-202 adjustment charged exactly once, balance −250 once;
+same-key/different-payload 409; tenant token 403 / no token 401 with nothing enqueued;
+idle close 200 + closure row; re-close 409; two concurrent closes → exactly one 200,
+one 409, one closure row; adjustment after closing the current month rerouted to the
+next open period — nothing books into a period after its closure; close protocol
+verified live with `created_at < closed_at` for every pre-existing row). Full 3-lens
+review + skeptic: 3 confirmed minors, none exploitable, none blocking.
+
+**Solved:** the hybrid-token finding was a silent contract surface — pinned now
+(admin decided solely by `admin === true`; a `tenant_id` in the same token is ignored;
+only the secret holder can mint one).
+
+**Accepted (logged, not hidden):** a NUL byte or unpaired UTF-16 surrogate inside a
+validated string field (tenant/reason/key) passes the boundary `typeof` checks and
+dies at INSERT as a fail-closed 500 instead of the pinned 400 — transaction rolls
+back, zero rows written, admin-only reachability here, and the identical class
+pre-exists on `/events`/`/webhooks/usage`; logged as Phase 8 hardening (shared
+control-character/surrogate gate on string validators) rather than churning three
+reviewed routes mid-build. `reason` is unbounded below the 256 KiB body cap in the
+never-purged queue (same class as the bounded key, much smaller exposure; Phase 8).
+No SIGKILL hook covers the two new admin transactions yet — structurally identical to
+the proven ingest enqueue (single transaction, commit-before-response, unique-key
+recovery), and the crash matrix expansion is already PLAN Phase 8 scope.
 
 ## Open / pick up next time
 
