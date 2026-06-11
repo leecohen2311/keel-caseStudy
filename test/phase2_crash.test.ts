@@ -59,7 +59,12 @@ async function counts(tenantId: string) {
   return r.rows[0] as { txns: number; postings: number }
 }
 
-describe('phase 2: crash safety under real SIGKILL', () => {
+// DEL-3 requires "at least one crash-restart test and one concurrency test",
+// clearly identifiable. They are the two describes below: the crash-restart
+// suite (real SIGKILL mid-transaction, then a restarted worker recovers) and
+// the concurrency suite (two live workers racing over one queue).
+
+describe('DEL-3 crash-restart test — phase 2: kill the consumer mid-transaction, restart, invariants hold', () => {
   const boundaries = ['after-claim', 'after-header', 'after-postings', 'after-markdone']
 
   test.each(boundaries)(
@@ -138,7 +143,9 @@ describe('phase 2: crash safety under real SIGKILL', () => {
     }
     expect(await counts(tenantId)).toEqual({ txns: 1, postings: 2 })
   })
+})
 
+describe('DEL-3 concurrency test — phase 2: two concurrent workers race over one queue', () => {
   test('two concurrent workers drain 30 events: each charged exactly once', async () => {
     const tenantId = await newTenant(owner)
     const events = 30
