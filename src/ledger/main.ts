@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { verifyJwt, tenantOf } from '../auth.ts'
 import { periodKeyOf } from './consumer.ts'
+import { rate } from './pricebook.ts'
 
 // Ledger API: tenant-scoped reads (Phase 5), admin actions (Phase 6), and
 // reconcile (Phase 7), plus the consumer worker. Balances are DERIVED on every
@@ -367,6 +368,134 @@ async function handleClose(req: IncomingMessage, res: ServerResponse): Promise<v
   }
 }
 
+interface Discrepancy {
+  type: string
+  tenant_id: string
+  event_id?: string
+  txn_id?: string
+  expected?: string
+  posted?: string
+  detail?: string
+}
+
+// POST /reconcile (admin): independently re-derive state from the queue's
+// `done` rows — the record the runtime roles cannot mutate — and flag drift
+// (REC-1..3). One REPEATABLE READ READ ONLY transaction: a stable snapshot,
+// so an in-flight event (whose done-flag, header, and postings commit
+// atomically) is either fully visible or not at all — never a false positive
+// under concurrent load. Re-rating uses the QUEUE payload, never the header,
+// so a symmetric tamper that fools zero-sum still shows up.
+async function handleReconcile(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!pool) {
+    sendJson(res, 500, { error: 'service misconfigured' })
+    return
+  }
+  const who = authAdmin(req)
+  if (who !== 'admin') {
+    sendJson(res, who === 'unauthenticated' ? 401 : 403, { error: 'admin required' })
+    return
+  }
+  await readBody(req, MAX_BODY_BYTES) // drain; the report takes no input
+
+  const discrepancies: Discrepancy[] = []
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+
+    // 1+2. Every done queue row, joined to its header and receivable leg.
+    //      Usage re-rates through the price book; an adjustment's expected
+    //      amount is the enqueued amount_minor itself. A missing header is a
+    //      deleted pair; a posted amount differing from the re-derivation is
+    //      a tamper (including the symmetric scale that nets to zero).
+    const rows = await client.query(
+      `SELECT q.tenant_id, q.event_id, q.kind, q.payload,
+              t.txn_id, p.amount_minor::text AS posted
+         FROM event_queue q
+         LEFT JOIN transactions t
+           ON t.tenant_id = q.tenant_id AND t.originating_event_id = q.event_id
+         LEFT JOIN postings p
+           ON p.txn_id = t.txn_id AND p.account = 'receivable'
+        WHERE q.status = 'done'`
+    )
+    for (const row of rows.rows) {
+      if (row.txn_id === null) {
+        discrepancies.push({
+          type: 'done_row_without_transaction',
+          tenant_id: row.tenant_id,
+          event_id: row.event_id
+        })
+        continue
+      }
+      if (row.posted === null) {
+        discrepancies.push({
+          type: 'transaction_without_receivable_posting',
+          tenant_id: row.tenant_id,
+          event_id: row.event_id,
+          txn_id: row.txn_id
+        })
+        continue
+      }
+      let expected: bigint
+      try {
+        const payload = (row.payload ?? {}) as Record<string, unknown>
+        expected =
+          row.kind === 'adjustment'
+            ? BigInt(payload.amount_minor as number)
+            : rate(payload.metric as string, BigInt(payload.quantity as number))
+      } catch (err) {
+        discrepancies.push({
+          type: 'unratable_queue_payload',
+          tenant_id: row.tenant_id,
+          event_id: row.event_id,
+          detail: String(err)
+        })
+        continue
+      }
+      if (BigInt(row.posted) !== expected) {
+        discrepancies.push({
+          type: row.kind === 'adjustment' ? 'adjustment_amount_mismatch' : 'usage_amount_mismatch',
+          tenant_id: row.tenant_id,
+          event_id: row.event_id,
+          txn_id: row.txn_id,
+          expected: expected.toString(),
+          posted: row.posted
+        })
+      }
+    }
+
+    // 3. Global structural checks over EVERY transaction (queue-backed or
+    //    not): exactly two postings and a zero net. UNIQUE(txn_id, account)
+    //    plus the two-value account CHECK makes two legs one-per-account;
+    //    the composite FK already makes orphan postings impossible.
+    const unbalanced = await client.query(
+      `SELECT t.txn_id, t.tenant_id,
+              COUNT(p.posting_id)::int AS legs,
+              COALESCE(SUM(p.amount_minor), 0)::text AS net
+         FROM transactions t
+         LEFT JOIN postings p ON p.txn_id = t.txn_id
+        GROUP BY t.txn_id, t.tenant_id
+       HAVING COUNT(p.posting_id) <> 2 OR COALESCE(SUM(p.amount_minor), 0) <> 0`
+    )
+    for (const row of unbalanced.rows) {
+      discrepancies.push({
+        type: 'unbalanced_transaction',
+        tenant_id: row.tenant_id,
+        txn_id: row.txn_id,
+        detail: `legs=${row.legs} net=${row.net}`
+      })
+    }
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  sendJson(res, 200, { ok: discrepancies.length === 0, discrepancies })
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   if (req.method === 'GET' && url.pathname === '/healthz') {
@@ -387,6 +516,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
   if (req.method === 'POST' && url.pathname === '/periods/close') {
     await handleClose(req, res)
+    return
+  }
+  if (req.method === 'POST' && url.pathname === '/reconcile') {
+    await handleReconcile(req, res)
     return
   }
   sendJson(res, 404, { error: 'not found' })
