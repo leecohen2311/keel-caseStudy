@@ -5,13 +5,15 @@ continuity file (what is decided, what is in progress, what is next). The graded
 narrative lives in NOTES.md; the grading contract is REQUIREMENTS.md; this is for
 keeping the engineer and the coding agent from drifting or relitigating settled calls.
 
-_Last updated: 2026-06-11 (ALL PHASES 0-11 complete; code phases individually gated;
-full suite 150/150 green from a clean DB; the REVIEW.md audit found all 42 requirement
-IDs met (file since removed from the tree per the engineer — recoverable at `5695cf0`).
+_Last updated: 2026-06-11 (ALL PHASES 0-12 complete; code phases individually gated —
+including, at the phase-12 gate, the previously deferred re-skin diff; full suite
+**157/157** green from a clean DB; the REVIEW.md audit found all 42 requirement IDs met
+(file since removed from the tree per the engineer — recoverable at `5695cf0`).
 Phase 11 = console hardening (ENABLE_DEV_CORS gate, XSS-inert render layer, mobile +
-design polish), followed by the console light re-skin session (see its log). Phases
-0-11 (through `c5c2599`) pushed to origin/main by the engineer 2026-06-11 00:21; the
-re-skin session's two commits are local-only — that push is the engineer's call)._
+design polish); then the console light re-skin session (see its log); then Phase 12 =
+the read-only Ledger view + the [hidden] kill rule, gated ready: true (see its log).
+Everything through phase 12 pushed to origin/main 2026-06-11 on the engineer's
+in-session instruction)._
 
 ## Current status
 
@@ -94,12 +96,16 @@ consider whether to keep it as-is. (The second surfaced artifact, the untracked
 `GRADE-REPORT.md`, was resolved in the re-skin session: deleted on the engineer's
 instruction, along with REVIEW.md — see that session's log.)
 
-**Next:** engineer sign-off on the Phase 11 run and the UI re-skin session (which ran
-WITHOUT the phase gate, on the engineer's instruction), decide on the `1008c5f`
-commit-message question above. **Push state (2026-06-11):** phases 0-11 (through
-`c5c2599`) were pushed to origin/main by the engineer at 00:21, outside this session;
-the re-skin + artifact-removal commits are local-only — until they are pushed,
-REVIEW.md is still present in the remote tree.
+**Phase 12 (read-only Ledger view + [hidden] fix) is built and gated:** red commit
+`1be03da`, green commit `e4cdda0`; **157 tests green from a clean DB**; gate
+**ready: true** first run — and this gate also covered the re-skin session's diff,
+whose gate had been deferred (range `c5c2599..e4cdda0`). 0 blockers/majors, 3 confirmed
+minors accepted (see the Phase 12 log).
+
+**Next:** engineer sign-off on the Phase 12 run (which retroactively gated the re-skin
+session), decide on the `1008c5f` commit-message question above. **Push state
+(2026-06-11):** everything through phase 12 pushed to origin/main this session on the
+engineer's in-session instruction; the remote no longer carries REVIEW.md.
 
 **In progress elsewhere:** nothing — the `tests/phases-3-7` scaffold branch is merged
 to main.
@@ -424,7 +430,20 @@ escape-everything builders in `ui/render.js` (XSS-inert, proven by
 test/phase-11/ui_render.test.ts). It embeds the README's seeded dev JWTs and the
 seeded webhook secret (for in-browser SubtleCrypto signing) — a deliberate, labeled
 test convenience. No business logic, no new server endpoint, nothing that can touch an
-invariant.
+invariant. Since Phase 12 the page has two views behind a top-bar toggle: **Console**
+(the action panels, the default) and **Ledger**, a read-only account-activity register
+for the acting identity built purely from the existing `GET /statement` +
+`GET /balance` (no endpoint added or changed) — per-line event_date / kind / metric /
+qty / amount, the period total in the table footer, the all-time derived balance as a
+readout, and simple prev/next month navigation from the current UTC period (no
+unbounded scan). Its wire data renders only through three additive render.js builders
+(`ledgerTableHtml` — deliberately no txn_id column; the Statement panel keeps the full
+wire shape — `ledgerEmptyHtml`, `ledgerErrorHtml`); identity/period/balance text lands
+via textContent; under the admin identity the view shows the live 401 (reads are
+tenant-scoped). The phase-12 suite pins the view ids (view-btn-console/-ledger,
+view-console/-ledger, lv-prev/-next/-period/-balance/-body) and the
+`[hidden]{display:none !important}` kill rule in styles.css (component display rules
+like `.readout`'s flex silently beat the UA [hidden] default).
 
 **Infra (Phase 0).** `git init` first. One `migrate` container runs migrations and the
 seed as `app_owner`; services depend on it (avoids the two-service migration race).
@@ -994,6 +1013,43 @@ Phase 11 hardening preserved: all wire data still renders through ui/render.js
 builders, ENABLE_DEV_CORS untouched, 44px tap targets / 16px touch fields /
 prefers-reduced-motion blocks kept. Selector contract of the phase-9/11 suites
 unchanged (same panel ids, same render.js API).
+
+### Phase 12 — read-only Ledger view + the [hidden] kill rule (2026-06-11)
+
+**What happened:** TDD: red commit `1be03da` — 7 failing smoke tests (new escaping
+builders render hostile statement wire data inert; page wiring for the view toggle,
+month nav, balance readout; the `[hidden]` kill rule), each verified failing for the
+right reason. Green commit `e4cdda0`: the top-bar Console/Ledger toggle and the
+read-only Ledger register described in the amended console pin above — `ui/` only,
+plus README (browser section + checklist item 10, counts 150 → 157). The engineer's
+two constraints held by construction: pure client (zero `src/` lines in the diff) and
+all wire data through render.js builders. Also fixed: the pre-existing `[hidden]`
+override bug — `.readout`'s and `.panel__lock`'s display rules beat the UA default, so
+the empty balance placeholder always showed and the admin lock block never hid.
+157/157 green from a clean DB.
+
+**Gate (ready: true, first run — 0 blockers, 0 majors, 0 refuted):** this gate covered
+the FULL accumulated UI diff `c5c2599..e4cdda0`, retroactively gating the re-skin
+session whose gate the engineer had deferred. Clean-DB suites 157/157; cold compose
+boot proven with all six smoke checks live (console + assets 200 with the Ledger
+toggle present; preflights 204; statement/balance pinned shapes with the README JWT;
+a fresh 202 charge posted by the consumer moved statement total and balance by exactly
+the rated amount; admin JWT → 401 on /balance, the view's documented error path; crash
+hooks inert). Readiness checklist all-ok (frozen untouched, TDD visible, README
+honest, no contract invented, gaps logged).
+
+**Accepted (3 confirmed minors, logged not hidden):** (1) this MEMORY entry itself was
+the pending item — closed by this commit, including the stale 150/150 header. (2) The
+phase-12 wiring test pins builder *presence*, not sink *exclusivity* — a future raw
+`innerHTML` sink beside the builders would stay green; the discipline is carried by
+the phase-11 hostile-payload builder tests plus review. Accepted as the deliberate
+"light smoke, do not over-invest" scope pinned in the test header. (3) A failed
+/balance read with a successful /statement read leaves the balance readout at "—"
+with no error surfaced — reachable only via a divergent server fault (both reads share
+one token; the real divergent case, admin, surfaces the 401 via the statement error
+state). Accepted for a read-only demo console. Nit for the record: commit `6324b6b`'s
+message attributes the REVIEW.md removal that actually landed in `c348d96` — history
+kept as-is, attribution corrected here.
 
 ## Open / pick up next time
 
